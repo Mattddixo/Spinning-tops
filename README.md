@@ -99,7 +99,7 @@ docker compose up -d --build
 
 This builds `server/Dockerfile` (multi-stage: Gradle build, then a bare JRE
 image running the fat jar) and starts Postgres alongside it. By default it
-binds `0.0.0.0:8080` - for a friends-only server, bind it to your Tailscale
+binds `0.0.0.0:8081` - for a friends-only server, bind it to your Tailscale
 interface instead so it's reachable over the tailnet but not the open LAN:
 
 ```
@@ -107,7 +107,7 @@ BIND_ADDRESS=$(tailscale ip -4) docker compose up -d --build
 ```
 
 Point the Android app's "server address" field at
-`http://<that-tailscale-ip>:8080`.
+`http://<that-tailscale-ip>:8081`.
 
 Environment variables (all optional, see `docker-compose.yml`):
 `PORT`, `DB_URL`, `DB_DRIVER`, `DB_USER`, `DB_PASSWORD`, `POSTGRES_PASSWORD`,
@@ -121,7 +121,7 @@ every authenticated request needs both the player id and the token. That's
 enough to stop one friend from impersonating another *on the same network*,
 which is the actual threat model for a server that's only reachable over
 Tailscale in the first place. It is **not** meant to resist a hostile public
-internet - don't expose port 8080 outside your tailnet.
+internet - don't expose port 8081 outside your tailnet.
 
 ## Running the Android app
 

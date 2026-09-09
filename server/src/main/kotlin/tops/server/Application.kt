@@ -27,7 +27,7 @@ import tops.server.routes.playerRoutes
 import java.time.Duration
 
 fun main() {
-    val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
+    val port = System.getenv("PORT")?.toIntOrNull() ?: 8081
     embeddedServer(Netty, port = port, module = Application::module).start(wait = true)
 }
 

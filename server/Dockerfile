@@ -8,5 +8,5 @@ RUN ./gradlew :server:buildFatJar --no-daemon
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 COPY --from=build /workspace/server/build/libs/server.jar ./server.jar
-EXPOSE 8080
+EXPOSE 8081
 ENTRYPOINT ["java", "-jar", "server.jar"]

@@ -39,7 +39,7 @@ fun RegisterScreen(errorMessage: String?, onSubmit: (displayName: String, server
         OutlinedTextField(
             value = serverAddress,
             onValueChange = { serverAddress = it },
-            label = { Text("Server address (e.g. http://100.x.y.z:8080)") },
+            label = { Text("Server address (e.g. http://100.x.y.z:8081)") },
         )
         if (errorMessage != null) {
             Text("Couldn't register: $errorMessage")
