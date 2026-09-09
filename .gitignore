@@ -1,0 +1,9 @@
+.gradle/
+build/
+*/build/
+.kotlin/
+local.properties
+data/
+*.iml
+.idea/
+*.log

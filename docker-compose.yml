@@ -1,0 +1,41 @@
+# Self-host on the homelab box, reachable to friends only over Tailscale:
+#   docker compose up -d --build
+# Then point the Android app at http://<tailscale-ip-or-magicdns-name>:8080
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tops
+      POSTGRES_USER: tops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tops}
+    volumes:
+      - tops-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tops"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 8080
+      DB_URL: jdbc:postgresql://postgres:5432/tops
+      DB_DRIVER: org.postgresql.Driver
+      DB_USER: tops
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-tops}
+    ports:
+      # Bind to the Tailscale interface only, not 0.0.0.0, so the server is
+      # reachable over the tailnet but not the LAN/public interface. Replace
+      # 100.x.y.z with this host's Tailscale IP (see README).
+      - "${BIND_ADDRESS:-0.0.0.0}:8080:8080"
+
+volumes:
+  tops-postgres-data:
