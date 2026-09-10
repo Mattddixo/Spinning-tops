@@ -2,9 +2,15 @@
 // dev sandbox cannot reach (see README "What wasn't verified in-sandbox").
 // This file is the only one that carries that dependency - building :core
 // or :server never needs to touch it.
+//
+// No org.jetbrains.kotlin.android plugin here: AGP 9.0+ has "built-in Kotlin
+// support" enabled by default, which replaces what that plugin used to do.
+// Applying both crashes AGP's own Kotlin wiring (it tries to create a
+// KotlinAndroidTarget that references an old Variant API class AGP already
+// removed). kotlin.compose stays - it's a separate plugin (the Compose
+// compiler) and built-in Kotlin support doesn't cover it.
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
 }
@@ -29,10 +35,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+    // No kotlinOptions {} block: that DSL extension came from the
+    // org.jetbrains.kotlin.android plugin, which is no longer applied (see
+    // the plugins {} block above). Built-in Kotlin support derives jvmTarget
+    // from compileOptions.targetCompatibility above automatically.
 
     packaging {
         resources.excludes.add("/META-INF/{AL2.0,LGPL2.1}")
