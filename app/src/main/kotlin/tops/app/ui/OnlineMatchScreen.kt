@@ -57,8 +57,8 @@ fun OnlineMatchScreen(client: ServerClient, topConfig: TopConfig, onBack: () -> 
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        runCatching { arenas = client.arenas() }
-            .onSuccess { if (arenaId == null) arenaId = it.firstOrNull()?.id }
+        runCatching { client.arenas() }
+            .onSuccess { arenas = it; if (arenaId == null) arenaId = it.firstOrNull()?.id }
             .onFailure { errorText = it.message }
     }
 
