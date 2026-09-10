@@ -3,7 +3,7 @@ build/
 */build/
 .kotlin/
 local.properties
-data/
+/data/
 *.iml
 .idea/
 *.log
