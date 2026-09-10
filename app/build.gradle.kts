@@ -1,10 +1,9 @@
 // NOTE: com.android.application lives on Google's Maven repo, which this
 // dev sandbox cannot reach (see README "What wasn't verified in-sandbox").
-// It's applied here directly, with an explicit version, precisely so that
-// this file alone carries that dependency - building :core or :server
-// never needs to touch it.
+// This file is the only one that carries that dependency - building :core
+// or :server never needs to touch it.
 plugins {
-    id("com.android.application") version "8.5.2"
+    alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
@@ -12,12 +11,12 @@ plugins {
 
 android {
     namespace = "tops.app"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "tops.app"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
     }
