@@ -1,7 +1,7 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.shadow)
+    alias(libs.plugins.ktor)
     application
 }
 
@@ -13,11 +13,10 @@ kotlin {
     jvmToolchain(21)
 }
 
-// Fat-jar packaging via the Shadow plugin directly (Gradle-9-compatible), rather than
-// io.ktor.plugin's bundled fatJar wrapper, which still ships an old Shadow version that
-// uses a Gradle API removed in Gradle 9. The Dockerfile builds this as :server:shadowJar.
-tasks.shadowJar {
-    archiveFileName.set("server.jar")
+ktor {
+    fatJar {
+        archiveFileName.set("server.jar")
+    }
 }
 
 dependencies {
@@ -42,7 +41,6 @@ dependencies {
 
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.ktor.server.test.host)
-    testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 tasks.test {

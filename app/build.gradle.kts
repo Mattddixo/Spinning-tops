@@ -1,16 +1,10 @@
 // NOTE: com.android.application lives on Google's Maven repo, which this
 // dev sandbox cannot reach (see README "What wasn't verified in-sandbox").
-// This file is the only one that carries that dependency - building :core
-// or :server never needs to touch it.
-//
-// org.jetbrains.kotlin.android IS applied here (traditional/explicit way):
-// AGP 9's "built-in Kotlin support" is disabled via gradle.properties
-// (android.builtInKotlin=false) because it's broken in AGP 9.4.0 - its own
-// internal Kotlin interop code crashes trying to load a Variant API class
-// AGP already removed, independent of anything this project applies. See
-// gradle.properties for the full explanation.
+// It's applied here directly, with an explicit version, precisely so that
+// this file alone carries that dependency - building :core or :server
+// never needs to touch it.
 plugins {
-    alias(libs.plugins.android.application)
+    id("com.android.application") version "8.5.2"
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
@@ -18,12 +12,12 @@ plugins {
 
 android {
     namespace = "tops.app"
-    compileSdk = 36
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "tops.app"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 34
         versionCode = 1
         versionName = "0.1.0"
     }

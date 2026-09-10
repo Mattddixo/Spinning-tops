@@ -2,7 +2,7 @@
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /workspace
 COPY . .
-RUN ./gradlew :server:shadowJar --no-daemon
+RUN ./gradlew :server:buildFatJar --no-daemon
 
 # Run stage: just the JRE and the fat jar, nothing else.
 FROM eclipse-temurin:21-jre
