@@ -3,14 +3,15 @@
 // This file is the only one that carries that dependency - building :core
 // or :server never needs to touch it.
 //
-// No org.jetbrains.kotlin.android plugin here: AGP 9.0+ has "built-in Kotlin
-// support" enabled by default, which replaces what that plugin used to do.
-// Applying both crashes AGP's own Kotlin wiring (it tries to create a
-// KotlinAndroidTarget that references an old Variant API class AGP already
-// removed). kotlin.compose stays - it's a separate plugin (the Compose
-// compiler) and built-in Kotlin support doesn't cover it.
+// org.jetbrains.kotlin.android IS applied here (traditional/explicit way):
+// AGP 9's "built-in Kotlin support" is disabled via gradle.properties
+// (android.builtInKotlin=false) because it's broken in AGP 9.4.0 - its own
+// internal Kotlin interop code crashes trying to load a Variant API class
+// AGP already removed, independent of anything this project applies. See
+// gradle.properties for the full explanation.
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
 }
@@ -35,10 +36,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    // No kotlinOptions {} block: that DSL extension came from the
-    // org.jetbrains.kotlin.android plugin, which is no longer applied (see
-    // the plugins {} block above). Built-in Kotlin support derives jvmTarget
-    // from compileOptions.targetCompatibility above automatically.
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
 
     packaging {
         resources.excludes.add("/META-INF/{AL2.0,LGPL2.1}")
