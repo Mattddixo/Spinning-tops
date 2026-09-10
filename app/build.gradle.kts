@@ -6,13 +6,10 @@
 // version only in this file (that splits it into a separate classloader from
 // kotlin.android and breaks kotlin.android's reflective AGP class lookups).
 //
-// Kotlin is pinned to 1.9.24 (pre-K2) here, not 2.0+, because there's no
-// org.jetbrains.kotlin.plugin.compose Gradle plugin on 1.9.x - Compose is
-// wired up the traditional way instead, via composeOptions{} below with a
-// standalone Compose compiler artifact version.
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
 }
 
@@ -30,10 +27,6 @@ android {
 
     buildFeatures {
         compose = true
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
     }
 
     compileOptions {

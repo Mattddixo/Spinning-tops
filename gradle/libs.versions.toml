@@ -1,16 +1,15 @@
 [versions]
-kotlin = "1.9.24"
+kotlin = "2.0.21"
 agp = "8.5.2"
 compose-bom = "2024.10.00"
-compose-compiler = "1.5.14"
 activity-compose = "1.9.3"
 ktor = "2.3.12"
 exposed = "0.55.0"
 postgres = "42.7.4"
 h2 = "2.3.232"
 logback = "1.5.8"
-coroutines = "1.8.1"
-serialization-json = "1.6.3"
+coroutines = "1.9.0"
+serialization-json = "1.7.3"
 datastore = "1.1.1"
 junit = "5.11.2"
 
@@ -55,6 +54,7 @@ junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "jun
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 ktor = { id = "io.ktor.plugin", version.ref = "ktor" }

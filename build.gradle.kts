@@ -7,9 +7,9 @@
 // Declaring every Kotlin plugin flavor once here, at the same version,
 // avoids that conflict.
 //
-// On Kotlin 1.9.x (pre-K2) there's no org.jetbrains.kotlin.plugin.compose
-// Gradle plugin - Compose is wired up via composeOptions{} in :app instead
-// (see app/build.gradle.kts), so it isn't declared here.
+// kotlin.compose (the Compose compiler Gradle plugin, Kotlin 2.0+) is
+// declared here too, apply false, for the same reason - :app is the only
+// module that applies it for real.
 //
 // android.application is declared here too (apply false), not only in
 // :app, for the same classloader reason as kotlin.android above: when a
@@ -25,6 +25,7 @@
 plugins {
     alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.kotlin.android) apply false
+    alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.ktor) apply false
     alias(libs.plugins.android.application) apply false
