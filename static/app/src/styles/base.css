@@ -1,10 +1,5 @@
-/*
- * Base styles built on Atlassian Design System tokens. Forge injects the token
- * values after `view.theme.enable()`, so light, dark and high-contrast themes
- * follow Confluence automatically. Fallbacks keep the UI usable without them.
- * No inline <style> or style attributes are used, so the default Custom UI
- * Content Security Policy applies unchanged.
- */
+/* Uses ADS tokens (set by view.theme.enable()) with light-theme fallbacks.
+   No inline styles, so the default CSP is fine. */
 :root {
   --sp-text: var(--ds-text, #172b4d);
   --sp-text-subtle: var(--ds-text-subtle, #44546f);

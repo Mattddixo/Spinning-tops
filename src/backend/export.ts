@@ -4,12 +4,7 @@ import { readContext } from './context';
 import { AppFailure } from './errors';
 import { loadSpec } from './loadSpec';
 
-/**
- * PDF / Word export and page history cannot run the interactive viewer, so
- * the macro's `adfExport` function returns a static Atlassian Document Format
- * summary: title, version, servers and an endpoint table.
- * https://developer.atlassian.com/platform/forge/manifest-reference/modules/macro/
- */
+// PDF/Word export can't run Swagger UI, so export a plain endpoint table (ADF).
 
 type AdfNode = Record<string, unknown>;
 
@@ -67,14 +62,14 @@ export function buildExportAdf(summary: SpecSummary, config: MacroConfig, source
 export async function exportMacro(payload: { config?: MacroConfig; exportType?: string; context?: unknown }): Promise<AdfNode> {
   const config = payload.config ?? {};
   try {
-    // Exports run without an interactive user, so the app reads the spec on the page's behalf.
+    // no user during export, so read as the app
     const raw = (payload.context ?? {}) as Record<string, unknown> & { extension?: Record<string, unknown> };
     const ctx = readContext({ ...raw, accountId: undefined, accountType: 'anonymous', extension: { ...raw.extension, config } });
     const loaded = await loadSpec(ctx, config);
     const filtered = filterSpec(loaded.spec, config);
     return buildExportAdf(summarizeSpec(filtered, loaded.summary.kind), config, loaded.meta.sourceLink);
   } catch (err) {
-    // Never return null: Confluence PDF export can fail for the whole page when a macro does.
+    // Don't return null here, it can break the whole page's PDF export.
     const message = err instanceof AppFailure ? err.message : 'The API documentation could not be loaded for export.';
     return doc([panel('warning', `API documentation: ${message}`)]);
   }

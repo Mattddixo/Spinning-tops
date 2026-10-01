@@ -39,11 +39,11 @@ async function installHarness(page: Page, setup: Setup = {}) {
   const errors: string[] = [];
   page.on('pageerror', (err) => errors.push(`pageerror: ${err.message}`));
   page.on('console', (msg) => {
-    // Failed resource loads are reported (with their URL) by the response listener below.
+    // logged with the URL by the response handler instead
     if (msg.type() === 'error' && !msg.text().startsWith('Failed to load resource')) errors.push(`console: ${msg.text()}`);
   });
   page.on('response', (res) => {
-    // Browsers probe /favicon.ico on their own; Forge serves the app inside Confluence, so ignore it.
+    // ignore the browser's own favicon request
     if (res.status() >= 400 && !res.url().endsWith('/favicon.ico')) errors.push(`http ${res.status()}: ${res.url()}`);
   });
   await page.addInitScript(

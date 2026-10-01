@@ -8,10 +8,7 @@ type JsonObject = Record<string, unknown>;
 const isObject = (value: unknown): value is JsonObject =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-/**
- * Parse spec text as JSON or YAML. YAML aliases are capped to block
- * "billion laughs" style documents.
- */
+// JSON or YAML. Alias count is capped (billion laughs).
 export function parseSpecText(text: string): Result<JsonObject> {
   const trimmed = text.replace(/^\uFEFF/, '').trim();
   if (!trimmed) {
@@ -51,7 +48,7 @@ export function parseSpecText(text: string): Result<JsonObject> {
   }
 }
 
-/** Version patterns mirror the ones Swagger UI uses to pick a renderer. */
+// Same version checks Swagger UI uses.
 export function detectKind(spec: JsonObject): SpecKind | undefined {
   const openapi = spec.openapi;
   if (typeof openapi === 'string') {
@@ -165,12 +162,8 @@ function pathMatches(path: string, prefixes: string[]): boolean {
   });
 }
 
-/**
- * Return a copy of the spec containing only the operations selected by tag
- * and/or path prefix. Paths left without operations are removed, and the
- * top-level tag list is reduced to tags that are still in use.
- * Components are kept so `$ref`s stay valid.
- */
+// Keep only operations matching the tag/path filters. Empty paths and unused
+// tags are dropped; components are left alone so $refs still resolve.
 export function filterSpec<T extends JsonObject>(spec: T, options: FilterOptions): T {
   const tags = (options.includeTags ?? []).filter(Boolean);
   const prefixes = (options.includePaths ?? []).filter((p) => p.trim());
@@ -211,10 +204,7 @@ export function filterSpec<T extends JsonObject>(spec: T, options: FilterOptions
   return next as T;
 }
 
-/**
- * Plain-text summary stored in the indexed `searchText` macro parameter so
- * Confluence search finds pages by API title, endpoint path or summary.
- */
+// Text for the indexed searchText param (title + endpoints).
 export function buildSearchText(summary: SpecSummary, maxLength = 3000): string {
   const parts = [summary.title, summary.version ? `v${summary.version}` : '', summary.tags.join(' ')];
   for (const op of summary.operations) {

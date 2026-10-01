@@ -1,14 +1,11 @@
 import type { GitProvider } from './types';
 
-/**
- * Git provider helpers. Endpoints follow the providers' published API specs:
- *  - GitHub / GitHub Enterprise Server: GET {api}/repos/{owner}/{repo}/contents/{path}?ref=
- *    with `Accept: application/vnd.github.raw+json` (raw content, files up to 100 MB).
- *    Enterprise Server API base is `https://HOST/api/v3`.
- *  - GitLab (SaaS and self-managed): GET {api}/projects/{url-encoded path}/repository/files/{url-encoded file}/raw?ref=
- *  - Bitbucket Cloud: GET {api}/repositories/{workspace}/{repo}/src/{commit}/{path}
- *    (`commit` is a SHA, so branch/tag names are resolved through the refs API first).
- */
+// Endpoints used:
+//   GitHub/GHES: GET {api}/repos/{owner}/{repo}/contents/{path}?ref=  (Accept: application/vnd.github.raw+json)
+//                GHES api base is https://HOST/api/v3
+//   GitLab:      GET {api}/projects/{encoded project}/repository/files/{encoded path}/raw?ref=
+//   Bitbucket:   GET {api}/repositories/{ws}/{repo}/src/{commit}/{path}
+//                (commit must be a hash, so branch/tag names get looked up first)
 
 export interface ProviderDefaults {
   label: string;
@@ -49,10 +46,7 @@ export function isSpecFilename(name: string): boolean {
   return SPEC_EXTENSIONS.some((ext) => lower.endsWith(ext));
 }
 
-/**
- * Normalise a repository-relative file path and reject anything that could
- * escape the repository or point at a non-spec file.
- */
+// Clean up a repo path. Rejects ../ escapes and anything that isn't .json/.yaml/.yml.
 export function normaliseRepoPath(input: string): string | undefined {
   const trimmed = input.trim().replace(/^\/+/, '');
   if (!trimmed || trimmed.includes('\\') || trimmed.includes('\0')) return undefined;
@@ -79,7 +73,7 @@ export function isValidRepo(provider: GitProvider, repo: string): boolean {
   return provider === 'gitlab' ? segments.length >= 2 : segments.length === 2;
 }
 
-/** Allow-list entries look like "acme/payments" or "acme/*" (any repository under acme). */
+// Entries are "acme/payments" or "acme/*".
 export function repoAllowed(repo: string, allowList: string[]): boolean {
   const target = repo.toLowerCase();
   return allowList.some((raw) => {
@@ -142,10 +136,8 @@ export interface ParsedGitLink {
   path: string;
 }
 
-/**
- * Parse a pasted browser link to a file. The first segment after
- * blob/src is taken as the ref; refs containing "/" can be corrected in the form.
- */
+// Parse a pasted file link. Assumes the ref is one segment; branches with a
+// slash in them need fixing by hand.
 export function parseGitFileLink(link: string): ParsedGitLink | undefined {
   let url: URL;
   try {
@@ -186,7 +178,6 @@ export function parseGitFileLink(link: string): ParsedGitLink | undefined {
   return undefined;
 }
 
-/** Origin (scheme + host) used when asking an admin to approve egress. */
 export function originOf(url: string): string | undefined {
   try {
     const parsed = new URL(url);

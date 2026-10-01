@@ -11,10 +11,7 @@ import { proxyRequest } from './backend/proxy';
 import { listSpecAttachments } from './backend/sources/attachment';
 import { bumpCacheGeneration, getConnections, getSettings, saveSettings } from './backend/store';
 
-/**
- * Resolver for the macro viewer, the macro config modal and the admin page.
- * Every function returns a `Result` so the UI can show precise messages.
- */
+// One resolver for the macro, config modal and admin page.
 export const handler = makeResolver<Defs>({
   loadSpec: ({ payload, context }) =>
     asResult('loadSpec', async () => {

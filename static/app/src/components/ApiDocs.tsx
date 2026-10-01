@@ -10,7 +10,7 @@ interface ApiDocsProps {
   spec: Record<string, unknown>;
   config: MacroConfig;
   tryItOutAllowed: boolean;
-  /** Unsaved config from the editor, passed to the proxy so preview "Try it out" works. */
+  // unsaved config, so Try it out works in the preview
   preview?: MacroConfig;
 }
 
@@ -32,11 +32,8 @@ function bodyToText(body: unknown): string | undefined {
   return JSON.stringify(body);
 }
 
-/**
- * Swagger UI calls `request.userFetch` when it is set (swagger-client http).
- * Requests are relayed through the app backend, which avoids browser CORS
- * restrictions and enforces the admin's host approvals.
- */
+// swagger-client uses request.userFetch if it's set, so we point it at the
+// backend proxy instead of the browser's fetch.
 function proxyFetch(preview?: MacroConfig) {
   return async (url: string, init: { method?: string; headers?: Record<string, string>; body?: unknown }): Promise<Response> => {
     const result: ProxyResponse = await call(

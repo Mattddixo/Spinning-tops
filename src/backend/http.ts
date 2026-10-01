@@ -21,10 +21,7 @@ function looksLikeEgressDenial(err: unknown): boolean {
   return /egress|allow ?list|not allowed|URL not included/i.test(message);
 }
 
-/**
- * Fetch an external URL through Forge's egress-controlled `fetch`.
- * Domains must be approved by a Confluence admin (customer-managed egress).
- */
+// Outbound fetch. Only works for hosts an admin has approved.
 export async function externalFetch(
   url: string,
   init: RequestInit & { timeoutMs?: number; maxBytes?: number } = {},

@@ -31,12 +31,9 @@ const BLOCKED_REQUEST_HEADERS = new Set([
 
 const BLOCKED_RESPONSE_HEADERS = new Set(['set-cookie', 'set-cookie2']);
 
-/**
- * "Try it out" proxy. Browsers block cross-origin calls from the Confluence
- * iframe (CORS), so requests are relayed by the app backend. Every host must
- * be approved by a Confluence admin (customer-managed egress), the feature
- * must be enabled site-wide and on the macro, and only licensed users may use it.
- */
+// Try it out proxy. Calls from the iframe would hit CORS, so we send them from
+// the backend. Needs: site setting on, macro setting on, licensed user, and the
+// host approved by an admin.
 export async function proxyRequest(ctx: SecureContext, config: MacroConfig, request: ProxyRequest): Promise<ProxyResponse> {
   requireLicense(ctx);
   const settings = await getSettings();
@@ -63,7 +60,7 @@ export async function proxyRequest(ctx: SecureContext, config: MacroConfig, requ
     method,
     headers,
     body: canHaveBody ? body : undefined,
-    // Surface redirects to the user instead of silently following them to other hosts.
+    // don't follow redirects to other hosts
     redirect: 'manual',
     timeoutMs: PROXY_TIMEOUT_MS,
     maxBytes: MAX_RESPONSE_BODY,

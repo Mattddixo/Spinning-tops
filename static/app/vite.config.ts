@@ -4,8 +4,8 @@ import { defineConfig } from 'vite';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 
-// Three Custom UI entry points share one resource (see `resources[].entry` in manifest.yml).
-// `--mode harness` swaps @forge/bridge for a local mock so the UI can be tested in a browser.
+// 3 entry points, one Forge resource (see resources[].entry in manifest.yml).
+// --mode harness swaps in a fake @forge/bridge for the browser tests.
 export default defineConfig(({ mode }) => ({
   base: './',
   plugins: [react()],
@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => ({
   build: {
     target: 'es2022',
     sourcemap: false,
-    // Swagger UI alone is ~1.5 MB; Forge resource bundles allow up to 100 MB.
+    // swagger-ui is big; Forge allows 100 MB per resource
     chunkSizeWarningLimit: 4000,
     rollupOptions: {
       input: {

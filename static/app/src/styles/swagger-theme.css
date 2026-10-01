@@ -1,8 +1,4 @@
-/*
- * Swagger UI adjustments for Confluence: typography from the host theme,
- * display options, and a dark theme driven by `html[data-color-mode]`,
- * which Forge sets after `view.theme.enable()`.
- */
+/* Swagger UI tweaks: fonts, display toggles, dark mode via html[data-color-mode]. */
 .sp-docs .swagger-ui {
   font-family: var(--sp-font);
   color: var(--sp-text);
@@ -149,14 +145,14 @@ html[data-color-mode='dark'] .sp-docs .swagger-ui select {
   border-color: var(--sp-border-input);
 }
 
-/* Swagger's select arrow is a dark image; use the native arrow in dark mode instead. */
+/* swagger's arrow image is dark, use the native one */
 html[data-color-mode='dark'] .sp-docs .swagger-ui select {
   background-image: none;
   appearance: auto;
   color-scheme: dark;
 }
 
-/* Swagger UI icons draw with fill="currentColor", so give their buttons the theme text colour. */
+/* icons use fill=currentColor */
 html[data-color-mode='dark'] .sp-docs .swagger-ui svg.arrow,
 html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock-control-arrow,
 html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock-summary-control,
@@ -217,7 +213,7 @@ html[data-color-mode='dark'] .sp-docs .swagger-ui .renderedMarkdown code {
   color: var(--sp-text);
 }
 
-/* OpenAPI 3.1+ schemas render with the JSON Schema 2020-12 components. */
+/* 3.1+ schemas use the json-schema-2020-12 components */
 html[data-color-mode='dark'] .sp-docs .swagger-ui [class*='json-schema-2020-12'] {
   color: var(--sp-text);
 }

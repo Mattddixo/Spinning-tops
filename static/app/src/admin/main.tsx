@@ -234,7 +234,7 @@ function ConnectionEditor({
         ...draft,
         repos: splitList(draft.repos),
         spaceKeys: splitList(draft.spaceKeys),
-        // Undefined keeps the stored token; an explicit value replaces it.
+        // undefined = keep the existing token
         token: draft.token === undefined || (draft.token === '' && !isNew) ? undefined : draft.token,
       };
       const saved = await call(invoke('adminSaveConnection', { connection: input }));
@@ -347,7 +347,7 @@ function TestConnection({ connection }: { connection: GitConnection }) {
     setResult(undefined);
     try {
       const r = await call(invoke('adminTestConnection', { id: connection.id, repo, path, ref }));
-      setResult({ ok: true, text: `Loaded “${r.title}” ${r.version ? `v${r.version} ` : ''}— ${r.operationCount} operations from ${r.fileCount} file(s).` });
+      setResult({ ok: true, text: `Loaded ${r.title}${r.version ? ` v${r.version}` : ''}: ${r.operationCount} operations, ${r.fileCount} file(s).` });
     } catch (err) {
       setResult({ ok: false, error: toAppError(err) });
     } finally {

@@ -1,92 +1,85 @@
-# SpecPage — OpenAPI & Swagger docs for Confluence Cloud
+# SpecPage
 
-SpecPage is an [Atlassian Forge](https://developer.atlassian.com/platform/forge/) app. It adds a Confluence macro that renders interactive API documentation from OpenAPI 3.0 / 3.1 / 3.2 or Swagger 2.0 specs.
+A Confluence Cloud macro for OpenAPI / Swagger docs, built on Atlassian Forge.
 
-## Features
+Drop it on a page, point it at a spec, and you get Swagger UI inside Confluence. Supports OpenAPI 3.0, 3.1, 3.2 and Swagger 2.0.
 
-| Area | What it does |
-|---|---|
-| **Sources** | Page attachment, Git (GitHub, GitHub Enterprise Server, GitLab SaaS / self-managed, Bitbucket Cloud), https URL, or pasted text |
-| **Multi-file specs** | Relative `$ref`s (`./schemas/pet.yaml`) are resolved from the same repository or page and bundled into one document |
-| **Private repositories** | Admin-managed Git connections. Tokens are encrypted in Forge secret storage and never sent to the browser. Each connection has a repository allow-list and optional space restrictions |
-| **Try it out** | Requests are relayed by the app backend, so browser CORS limits don't apply. Off by default; only admin-approved API hosts and only signed-in licensed users |
-| **Filtering** | Show only selected tags or path prefixes, hide deprecated operations |
-| **Display** | Expansion mode, max height, toggle info / servers / schemas / search box, custom title |
-| **Multiple macros per page** | Each macro is independent |
-| **Live preview** | The config dialog renders the spec as you edit. Paste a GitHub / GitLab / Bitbucket file link to fill in repo, branch and path |
-| **Search** | API title, endpoints and summaries are added to Confluence search (indexed macro parameter) |
-| **PDF / Word export** | Exports render a static endpoint table instead of an empty box |
-| **Public spaces** | Guests and anonymous visitors can read docs (they can never use "Try it out") |
-| **Theming** | Follows Confluence light / dark themes via Atlassian design tokens |
-| **Performance** | Git / URL specs are cached (configurable TTL). Attachments are never cached because access depends on the reader's permissions |
-| **Strict security** | No inline scripts or styles, no `eval`, no `unsafe-*` CSP entries, no static egress |
+## Where specs can come from
 
-## Security model
+- A `.yaml` / `.json` file attached to the page
+- A Git repo: GitHub (incl. Enterprise Server), GitLab (cloud or self-hosted), Bitbucket Cloud
+- An https URL (admin has to turn this on)
+- Pasted straight into the macro settings
 
-- **No egress by default.** The manifest declares no external hosts. A Confluence admin approves each Git host, spec host and "Try it out" API host in SpecPage settings using Forge [customer-managed egress](https://developer.atlassian.com/platform/forge/customer-managed-egress-and-remotes/). Atlassian shows its own consent dialog, and approvals can be revoked in Atlassian Administration → Connected apps.
-  - Trade-off: apps using customer-managed egress are **not eligible for the "Runs on Atlassian" badge**.
-- **Authorization uses the trusted resolver context**, never browser-supplied values. Saved macro config, page ID and space key come from the Forge context.
-  - Unsaved preview config is accepted only from licensed users.
-  - Admin functions verify Confluence admin rights with the user's own permissions (`/wiki/rest/api/user/current?expand=operations`).
-- **Attachments:** licensed users read them with their own permissions. Guests and anonymous visitors (who cannot make `asUser()` calls) are served only attachments of the page they are viewing.
-- **Git:** repository allow-lists, path normalisation (no `..` escapes, spec extensions only), and parsing as OpenAPI before anything is returned. Together these stop the macro being used to read arbitrary repository files.
-- **Try it out proxy:** strips cookies, hop-by-hop and `sec-*` headers, does not follow redirects, uses https only, and caps request (400 KB) and response (4 MB) sizes.
+If the spec is split into multiple files with relative `$ref`s, those get pulled in from the same repo/page and merged.
 
-## Project layout
+## Other stuff it does
+
+- Filter by tag or path prefix, hide deprecated endpoints
+- "Try it out" works. Requests go through the app backend instead of the browser, so no CORS errors. Off unless an admin enables it.
+- Preview while you edit the macro. You can paste a GitHub/GitLab/Bitbucket file link and it fills in repo, branch and path for you.
+- Several macros on one page work fine
+- Endpoints show up in Confluence search
+- PDF/Word export prints a table of endpoints instead of a blank box
+- Guests and anonymous users on public spaces can read the docs
+- Follows Confluence light/dark theme
+- Git and URL specs are cached (5 min to 24 h, set by the admin)
+
+## Security notes
+
+- The manifest doesn't allow any outside hosts. An admin approves each one (Git host, spec host, Try it out host) from the settings page. Atlassian shows its own confirmation for each, and they can be revoked under Atlassian Administration > Connected apps. The downside: apps that do this can't get the "Runs on Atlassian" badge.
+- Git tokens go in Forge secret storage and never get sent to the browser. Each connection has a list of allowed repos and can be limited to certain spaces. File paths are checked (no `../`, spec files only) and the file has to parse as OpenAPI before anything is returned.
+- Permission checks use the context Forge passes to the backend, not anything from the browser. Unsaved preview settings are only accepted from licensed users. The settings page checks the user is a Confluence admin.
+- Licensed users read attachments as themselves. Guests/anonymous users can't, so the app reads for them, but only from the page they're already looking at.
+- The Try it out proxy strips cookies and similar headers, doesn't follow redirects, is https only, and caps requests at 400 KB and responses at 4 MB. Guests and anonymous users can't use it.
+
+## Layout
 
 ```
-manifest.yml            Forge manifest (macro, admin settings page, functions)
-src/index.ts            Resolver + adfExport handlers
-src/backend/            Spec loading, sources, $ref bundling, cache, proxy, admin, export
-src/shared/             Types and pure logic shared by backend and UI
-static/app/             Custom UI (Vite + React + Swagger UI): macro, config, admin entries
-test/                   Unit tests (Vitest) with mocked Forge APIs
-e2e/                    Browser tests (Playwright) under a strict CSP with a mocked bridge
+manifest.yml        Forge manifest
+src/index.ts        resolver + export handler
+src/backend/        loading specs, Git/attachment/URL sources, $ref bundling, cache, proxy, admin
+src/shared/         types and logic used by both backend and UI
+static/app/         the UI (Vite + React + Swagger UI): macro, config dialog, admin page
+test/               unit tests (Vitest)
+e2e/                browser tests (Playwright) with a fake Forge bridge and a strict CSP
 ```
 
-## Develop and verify
+## Running it locally
 
-Requires Node 22+ (24 recommended).
+Node 22 or newer.
 
 ```bash
-npm install            # also installs static/app
-npm run verify         # typecheck + lint + unit tests + UI build
-npm run test:e2e       # browser tests (set PLAYWRIGHT_CHROMIUM_PATH if needed)
+npm install          # installs static/app too
+npm run verify       # typecheck, lint, unit tests, build
+npm run test:e2e     # browser tests; set PLAYWRIGHT_CHROMIUM_PATH if Playwright can't find Chromium
 ```
 
-## Deploy to your Confluence site
+## Deploying
 
-1. Create a free developer site at https://developer.atlassian.com (Confluence Cloud).
-2. Install the Forge CLI and log in:
+1. Make a free Confluence dev site at https://developer.atlassian.com
+2. Install the CLI and log in:
    ```bash
    npm install -g @forge/cli
-   forge login            # uses an Atlassian API token
+   forge login
    ```
-3. Register the app. This replaces the placeholder `app.id` in `manifest.yml`:
-   ```bash
-   forge register
-   ```
-4. Build, lint, deploy and install:
+3. `forge register` (fills in the real `app.id` in manifest.yml)
+4. Build and deploy:
    ```bash
    npm run build
    forge lint
    forge deploy
-   forge install          # choose Confluence and your site
+   forge install
    ```
-5. In Confluence, type `/OpenAPI` in the editor to insert the macro.
-6. Open **Manage apps → SpecPage → Configure** to add Git connections and approve hosts.
+5. In a Confluence page, type `/OpenAPI` to add the macro.
+6. Git connections and approved hosts are under Manage apps > SpecPage > Configure.
 
-After changing `manifest.yml` permissions, run `forge deploy` followed by `forge install --upgrade`.
+If you change permissions in manifest.yml, run `forge install --upgrade` after deploying.
 
-## Limits
+## Limits / not supported yet
 
-| Item | Limit |
-|---|---|
-| Spec size (including referenced files) | 4.5 MB (Forge invocation responses are capped at 5 MB) |
-| Referenced files | 50 |
-| Pasted specs | 100,000 characters |
-| Approved hosts | 10 per list (Forge limit); wildcards such as `*.example.com` are supported |
-| "Try it out" multipart / file uploads | Not supported |
-| OAuth2 authorization flows in "Try it out" | Not supported; API keys and bearer tokens work |
-| AsyncAPI | Not supported |
-| Azure DevOps | Not supported yet |
+- Specs up to 4.5 MB total, max 50 referenced files (Forge caps responses at 5 MB)
+- Pasted specs up to 100,000 characters
+- 10 approved hosts per list (Forge limit). Wildcards like `*.example.com` work.
+- Try it out: no file uploads, no OAuth login flows (API keys and bearer tokens are fine)
+- No AsyncAPI, no Azure DevOps

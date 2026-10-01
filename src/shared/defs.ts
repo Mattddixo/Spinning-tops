@@ -11,15 +11,9 @@ import type {
   Result,
 } from './types';
 
-/**
- * Type-safe contract between `makeResolver` (backend) and `makeInvoke` (UI).
- * See https://developer.atlassian.com/platform/forge/runtime-reference/forge-resolver/
- */
+// Shared by makeResolver (backend) and makeInvoke (UI).
 export type Defs = {
-  /**
-   * Load, bundle and validate the spec for the current macro.
-   * `preview` lets an editor render unsaved settings from the config modal.
-   */
+  // preview = unsaved settings from the config modal
   loadSpec: (args: { preview?: MacroConfig; refresh?: boolean }) => Result<LoadSpecResponse>;
   listAttachments: () => Result<AttachmentOption[]>;
   getEditorOptions: () => Result<{

@@ -21,10 +21,8 @@ export const fail = (code: ErrorCode, message: string, detail?: string): never =
   throw new AppFailure(code, message, detail);
 };
 
-/**
- * Run a resolver body and always return a serialisable `Result`.
- * Unexpected errors are logged without payload data and reported generically.
- */
+// Wraps a resolver so it always returns a Result. Unknown errors get logged
+// (without payloads) and shown as a generic message.
 export async function asResult<T>(name: string, body: () => Promise<T>): Promise<Result<T>> {
   try {
     return { ok: true, value: await body() };

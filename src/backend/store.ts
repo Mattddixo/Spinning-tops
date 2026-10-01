@@ -4,7 +4,7 @@ import { DEFAULT_SETTINGS, type AppSettings, type GitConnection } from '../share
 /**
  * Forge KVS layout (per installation):
  *   settings              AppSettings
- *   connections           GitConnection[] (metadata only — never tokens)
+ *   connections           GitConnection[] (no tokens)
  *   connection-token:<id> secret, stored with kvs.setSecret (encrypted)
  *   cache-generation      number, bumped to invalidate every cached spec
  */

@@ -1,11 +1,8 @@
 import type { MacroConfig } from '../shared/types';
 import { fail } from './errors';
 
-/**
- * Resolver context values are supplied by the Forge platform and are safe to
- * use for authorization (unlike `view.getContext()` in the browser).
- * https://developer.atlassian.com/platform/forge/app-context-security/
- */
+// The resolver context comes from Forge, so it's safe to use for auth checks.
+// view.getContext() in the browser is not.
 export interface SecureContext {
   accountId?: string;
   accountType: 'licensed' | 'unlicensed' | 'customer' | 'anonymous';
@@ -35,14 +32,14 @@ export function readContext(raw: unknown): SecureContext {
   const ext = ctx.extension ?? {};
   return {
     accountId: ctx.accountId && ctx.accountId !== 'unidentified' ? ctx.accountId : undefined,
-    // Fail safe: if the platform ever omits accountType, grant the least privilege.
+    // If accountType is ever missing, treat the user as unlicensed.
     accountType: accountType ?? (ctx.accountId && ctx.accountId !== 'unidentified' ? 'unlicensed' : 'anonymous'),
     contentId: ext.content?.id ? String(ext.content.id) : undefined,
     contentType: ext.content?.type,
     spaceKey: ext.space?.key,
     isEditing: ext.isEditing === true,
     config: ext.config ?? {},
-    // `license` is only present for paid apps in production; absent means dev/staging or free.
+    // license is undefined outside production, so treat that as active.
     licenseActive: ctx.license === undefined || ctx.license?.active !== false,
   };
 }
@@ -55,11 +52,8 @@ export function requireLicense(ctx: SecureContext): void {
   }
 }
 
-/**
- * Choose the macro configuration to use. Saved configuration always comes from
- * the trusted context; unsaved preview configuration is only accepted from
- * licensed users (page editors in the config modal).
- */
+// Saved config comes from the context. Unsaved preview config (from the
+// config modal) is only accepted from licensed users.
 export function effectiveConfig(ctx: SecureContext, preview?: MacroConfig): MacroConfig {
   if (preview && typeof preview === 'object') {
     if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'Previewing unsaved settings requires a licensed Confluence user.');

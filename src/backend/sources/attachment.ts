@@ -14,13 +14,9 @@ interface V2Attachment {
   fileSize?: number;
 }
 
-/**
- * Licensed users read attachments with their own permissions. Guests and
- * anonymous visitors cannot make `asUser()` calls, so the app reads on their
- * behalf — but only attachments of the page that contains the macro, which
- * the visitor is already viewing.
- * https://developer.atlassian.com/platform/forge/access-to-forge-apps-for-unlicensed-users/
- */
+// Licensed users read as themselves. Guests/anonymous can't use asUser(), so
+// we read as the app, but only from the page the macro is on (which they can
+// already see).
 function requester(ctx: SecureContext) {
   return isLicensedUser(ctx) ? asUser() : asApp();
 }
@@ -73,12 +69,11 @@ export function attachmentSource(ctx: SecureContext, filename: string): SpecSour
   }
   return {
     label: `Attachment: ${filename}`,
-    // Attachments are permission-sensitive, so they are never cached across users.
+    // don't cache: access depends on who is reading
     cacheKey: undefined,
     baseUrl: syntheticUrl('attachments', filename),
     async read(url: string) {
-      // Attachments are flat: "./schemas/pet.yaml" resolves to the attachment "schemas/pet.yaml",
-      // falling back to its base name "pet.yaml".
+      // Attachments have no folders, so try "schemas/pet.yaml" then "pet.yaml".
       const path = syntheticPath(url);
       const candidates = [...new Set([path, path.split('/').pop() ?? path])];
       let lastError: unknown;

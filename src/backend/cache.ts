@@ -3,12 +3,8 @@ import { kvs } from '@forge/kvs';
 import type { SpecSummary } from '../shared/types';
 import { getCacheGeneration } from './store';
 
-/**
- * Specs loaded from Git or URLs are cached in Forge KVS to keep pages fast
- * and stay well within Git provider rate limits. KVS values are limited to
- * 240 KiB, so large specs are split into chunks. Expired entries can linger
- * for up to 48 h, so freshness is checked against `fetchedAt` as well.
- */
+// Cache for Git/URL specs. KVS values max out at 240 KiB so big specs get
+// chunked. Expired keys can stick around ~48h, so we also check fetchedAt.
 const CHUNK_SIZE = 200_000;
 
 export interface CachedSpec {

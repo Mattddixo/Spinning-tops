@@ -1,6 +1,5 @@
-// Static server for the UI harness build. Sends a strict Content-Security-Policy
-// (no inline scripts or styles, no eval, no external hosts) to prove the UI runs
-// under Forge's Custom UI defaults without extra `permissions.content` entries.
+// Serves the harness build with a strict CSP (no inline, no eval, no external
+// hosts) so anything that would need unsafe-* shows up as a test failure.
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, normalize } from 'node:path';

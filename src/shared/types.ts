@@ -1,17 +1,10 @@
-/**
- * Types shared by the Forge backend (resolvers) and the Custom UI frontends.
- * Keep this file free of runtime imports so both sides can use it.
- */
+// Types used by both the backend and the UI. Keep runtime imports out of here.
 
 export type SourceType = 'attachment' | 'git' | 'url' | 'inline';
 
 export type DocExpansion = 'list' | 'full' | 'none';
 
-/**
- * Macro configuration saved by the config modal via `view.submit({ config })`.
- * Forge only accepts JSON-serialisable values without `null`, so optional
- * fields are omitted rather than set to null.
- */
+// Saved via view.submit({ config }). Forge rejects null, so leave fields out instead.
 export interface MacroConfig {
   sourceType?: SourceType;
 

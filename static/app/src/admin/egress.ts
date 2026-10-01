@@ -2,12 +2,8 @@ import { permissions } from '@forge/bridge';
 import type { EgressType } from '@forge/egress';
 import { EGRESS_GROUPS } from '../../../../src/shared/types';
 
-/**
- * Customer-managed egress: admins approve every external host SpecPage may
- * contact. `permissions.egress.set` shows an Atlassian consent dialog.
- * Limits: 10 groups per installation, 10 domains per group.
- * https://developer.atlassian.com/platform/forge/customer-managed-egress-and-remotes/
- */
+// Host approvals (customer-managed egress). egress.set pops Atlassian's consent
+// dialog. Forge allows 10 groups per install and 10 domains per group.
 export type EgressGroup = keyof typeof EGRESS_GROUPS;
 
 export const GROUP_INFO: Record<EgressGroup, { title: string; description: string }> = {
@@ -27,7 +23,7 @@ export const GROUP_INFO: Record<EgressGroup, { title: string; description: strin
 
 export const MAX_DOMAINS_PER_GROUP = 10;
 
-// Typed as the enum without importing @forge/egress at runtime (it carries Node-only helpers).
+// @forge/egress pulls in Node-only code, so only import the type.
 const FETCH_BACKEND = 'FETCH_BACKEND_SIDE' as unknown as EgressType;
 
 export async function getApprovedHosts(): Promise<Record<EgressGroup, string[]>> {
@@ -40,7 +36,6 @@ export async function getApprovedHosts(): Promise<Record<EgressGroup, string[]>>
   };
 }
 
-/** Normalise admin input to an https origin or a "*.example.com" wildcard. */
 export function normaliseHost(input: string): string | undefined {
   const value = input.trim().toLowerCase();
   if (!value) return undefined;

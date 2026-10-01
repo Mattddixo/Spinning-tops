@@ -24,10 +24,8 @@ export interface BundleOptions {
   rootText?: string;
 }
 
-/**
- * Read the root document, follow relative `$ref`s through the same source,
- * and return a single self-contained document with only internal `$ref`s.
- */
+// Load the root file, pull in any relative $refs from the same source and
+// return one bundled document.
 export async function loadAndBundle(source: SpecSource, options: BundleOptions): Promise<BundledSpec> {
   let totalBytes = 0;
   const seen = new Set<string>();
@@ -58,7 +56,7 @@ export async function loadAndBundle(source: SpecSource, options: BundleOptions):
         yaml: false,
         text: false,
         binary: false,
-        // One parser for every referenced file, with the same alias limits as the root document.
+        // same YAML limits as the root file
         specpage: {
           order: 1,
           canParse: true,

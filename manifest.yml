@@ -1,5 +1,5 @@
-# SpecPage — OpenAPI & Swagger documentation for Confluence Cloud.
-# Reference: https://developer.atlassian.com/platform/forge/manifest-reference/
+# SpecPage manifest
+# https://developer.atlassian.com/platform/forge/manifest-reference/
 modules:
   macro:
     - key: specpage-viewer
@@ -9,8 +9,8 @@ modules:
       title: OpenAPI / Swagger docs (SpecPage)
       description: Render interactive API documentation from an OpenAPI 3.x or Swagger 2.0 spec stored as a page attachment, in Git, at a URL, or pasted inline.
       category: embed
-      # Guests and anonymous visitors of public spaces can read the docs.
-      # "Try it out" is restricted to licensed users in the resolver.
+      # Let guests / anonymous users read docs on public spaces.
+      # Try it out is still licensed-users-only (checked in the resolver).
       unlicensedAccess:
         - unlicensed
         - anonymous
@@ -23,10 +23,10 @@ modules:
         viewportSize: max
         openOnInsert: true
         parameters:
-          # Stored as a Confluence attachment reference so renames are tracked.
+          # attachment type so Confluence keeps the reference if the file is renamed
           - identifier: attachment
             type: attachment
-          # API title, endpoint paths and summaries — added to Confluence search.
+          # title + endpoints, indexed so the page shows up in search
           - identifier: searchText
             type: string
             indexing:
@@ -54,16 +54,16 @@ resources:
 
 permissions:
   scopes:
-    # App storage: settings, Git connection metadata, encrypted tokens, spec cache.
+    # settings, git connections, tokens (secret store), spec cache
     - storage:app
-    # Read spec files attached to the page that contains the macro.
+    # read spec attachments on the current page
     - read:attachment:confluence
     - readonly:content.attachment:confluence
-    # Verify that a user is a Confluence administrator before changing settings.
+    # admin check for the settings page
     - read:confluence-user
   external:
-    # No egress is declared statically. Confluence administrators approve each
-    # Git host, spec host and API host in SpecPage settings (customer-managed egress).
+    # Nothing is allowed by default. Admins approve hosts from the settings page
+    # (customer-managed egress).
     configurable:
       enabled: true
 

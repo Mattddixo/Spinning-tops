@@ -30,7 +30,7 @@ function MacroApp() {
     view
       .getContext()
       .then((ctx) => {
-        // Used for presentation only; the backend reads the saved config from its trusted context.
+        // display only; the backend uses its own copy of the config
         setConfig((ctx.extension?.config as MacroConfig | undefined) ?? {});
         setIsEditing(ctx.extension?.isEditing === true);
       })
@@ -41,7 +41,7 @@ function MacroApp() {
   useEffect(() => {
     if (state.status !== 'loading' && !readySent.current) {
       readySent.current = true;
-      // Tells Confluence (and PDF export) that the macro has finished rendering.
+      // let Confluence know we're done rendering
       view.emitReadyEvent().catch(() => undefined);
     }
   }, [state.status]);

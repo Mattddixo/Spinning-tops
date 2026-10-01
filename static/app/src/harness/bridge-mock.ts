@@ -1,7 +1,5 @@
-/**
- * Local stand-in for @forge/bridge, used only by `vite build --mode harness`
- * for browser tests. Behaviour is driven by `window.__SPECPAGE_HARNESS__`.
- */
+// Fake @forge/bridge for the Playwright harness build (vite --mode harness).
+// Tests configure it through window.__SPECPAGE_HARNESS__.
 type Handler = (payload: unknown) => unknown;
 
 interface HarnessConfig {
@@ -44,8 +42,7 @@ export const view = {
       const root = document.documentElement;
       root.setAttribute('data-color-mode', mode);
       if (mode === 'dark') {
-        // Approximates the dark design tokens Forge injects, so dark styling can be checked
-        // in tests. Set through the CSSOM, which the strict CSP allows.
+        // rough copy of the dark tokens Forge injects
         const tokens: Record<string, string> = {
           '--ds-surface': '#1d2125',
           '--ds-surface-raised': '#22272b',

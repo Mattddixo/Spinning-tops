@@ -64,7 +64,7 @@ export async function loadSpec(
   requireLicense(ctx);
   const settings = await getSettings();
   const { source, rootText } = await selectSource(ctx, config, settings);
-  // Only signed-in licensed users may bypass the cache, to avoid hammering Git hosts.
+  // only licensed users can skip the cache
   const refresh = options.refresh === true && isLicensedUser(ctx);
   const tryItOutAllowed = settings.tryItOutEnabled && config.tryItOut === true && isLicensedUser(ctx);
 

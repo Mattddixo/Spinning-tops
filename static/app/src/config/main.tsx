@@ -26,12 +26,12 @@ type Preview = { status: 'idle' } | { status: 'loading' } | { status: 'error'; e
 
 const SOURCES: Array<{ id: SourceType; title: string; description: string }> = [
   { id: 'attachment', title: 'Page attachment', description: 'A .yaml or .json file attached to this page' },
-  { id: 'git', title: 'Git repository', description: 'GitHub, GitLab or Bitbucket — always up to date' },
+  { id: 'git', title: 'Git repository', description: 'GitHub, GitLab or Bitbucket' },
   { id: 'url', title: 'URL', description: 'A public or approved https:// address' },
   { id: 'inline', title: 'Paste', description: 'Paste the spec directly' },
 ];
 
-/** Remove empty values: Forge macro config rejects `null` and nested arrays. */
+// Forge rejects null in macro config, so drop empty values.
 function cleanConfig(config: MacroConfig): MacroConfig {
   const out: Record<string, unknown> = {};
   const keep = (key: keyof MacroConfig, value: unknown) => {
@@ -69,7 +69,6 @@ function cleanConfig(config: MacroConfig): MacroConfig {
   return out as MacroConfig;
 }
 
-/** Client-side checks so editors get instant feedback before a preview round trip. */
 function validateSource(config: MacroConfig, connections: ConnectionOption[]): string | undefined {
   switch (config.sourceType) {
     case undefined:
@@ -109,7 +108,7 @@ function ConfigApp() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string>();
   const previewSeq = useRef(0);
-  // Latest config for the debounced preview, which only re-runs when source fields change.
+  // the preview effect only re-runs on source changes, so read config from a ref
   const configRef = useRef<MacroConfig | undefined>(undefined);
   configRef.current = config;
 
@@ -126,7 +125,6 @@ function ConfigApp() {
   }, []);
 
   useEffect(() => {
-    // Custom macro config reads the saved configuration from getContext().
     view
       .getContext()
       .then((ctx) => setConfig({ docExpansion: 'list', showModels: true, ...((ctx.extension?.config as MacroConfig | undefined) ?? {}) }))
@@ -148,7 +146,6 @@ function ConfigApp() {
   const sourceError = config ? validateSource(config, connections) : undefined;
   const currentSourceKey = config ? sourceKey(config) : '';
 
-  // Debounced live preview whenever the source changes.
   useEffect(() => {
     const current = configRef.current;
     if (!current || sourceError) {
@@ -166,7 +163,6 @@ function ConfigApp() {
       }
     }, 600);
     return () => clearTimeout(timer);
-    // Only the source fields trigger a reload; display options re-render locally.
   }, [currentSourceKey, sourceError]);
 
   const tags = preview.status === 'ready' ? preview.data.summary.tags : [];
@@ -207,7 +203,7 @@ function ConfigApp() {
     }
     setSaving(true);
     setSaveError(undefined);
-    // Index what readers will actually see, so search results match the filtered docs.
+    // index the filtered spec, not the whole thing
     const searchText =
       preview.status === 'ready'
         ? buildSearchText(summarizeSpec(filterSpec(preview.data.spec, config), preview.data.summary.kind))
@@ -283,7 +279,7 @@ function ConfigApp() {
                           {attachments?.map((a) => (
                             <option key={a.title} value={a.title}>
                               {a.title}
-                              {a.fileSize ? ` — ${Math.max(1, Math.round(a.fileSize / 1024))} KB` : ''}
+                              {a.fileSize ? ` (${Math.max(1, Math.round(a.fileSize / 1024))} KB` : ''}
                             </option>
                           ))}
                         </select>

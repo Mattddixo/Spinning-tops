@@ -1,21 +1,14 @@
-/**
- * A spec source knows how to read the root document and any files it
- * references through relative `$ref`s.
- */
 export interface SpecSource {
-  /** Human-readable description, e.g. "acme/payments-api@main:openapi.yaml". */
   label: string;
-  /** Web link to view the source, if one exists. */
   link?: string;
-  /** Cache key material; undefined means the result must not be cached (permission-sensitive). */
+  // undefined = don't cache
   cacheKey?: string;
-  /** Absolute URL of the root document used as the base for resolving `$ref`s. */
+  // base for resolving relative $refs
   baseUrl: string;
-  /** Read a document by absolute URL (root or referenced). */
   read(url: string): Promise<string>;
 }
 
-/** Reserved TLD (RFC 2606) used for synthetic base URLs of non-HTTP sources. */
+// .invalid is reserved (RFC 2606), so these fake base URLs can't hit a real host.
 export const SYNTHETIC_TLD = '.specpage.invalid';
 
 export const isSyntheticUrl = (url: string): boolean => {
@@ -26,7 +19,6 @@ export const isSyntheticUrl = (url: string): boolean => {
   }
 };
 
-/** Decode the path portion of a synthetic URL into a slash-separated relative path. */
 export function syntheticPath(url: string): string {
   const { pathname } = new URL(url);
   return pathname

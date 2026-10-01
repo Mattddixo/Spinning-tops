@@ -2,7 +2,6 @@ import { makeInvoke } from '@forge/bridge';
 import type { Defs } from '../../../src/shared/defs';
 import type { AppError, Result } from '../../../src/shared/types';
 
-/** Type-safe resolver calls shared with the backend definitions. */
 export const invoke = makeInvoke<Defs>();
 
 export class RequestFailed extends Error {
@@ -15,7 +14,6 @@ export class RequestFailed extends Error {
   }
 }
 
-/** Unwrap a resolver `Result`, turning platform failures into an `AppError`. */
 export async function call<T>(promise: Promise<Result<T>>): Promise<T> {
   let result: Result<T>;
   try {
