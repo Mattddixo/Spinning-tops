@@ -1,176 +1,92 @@
-# Spinning Tops
+# SpecPage — OpenAPI & Swagger docs for Confluence Cloud
 
-A physics-first Beyblade-style battler: build a top out of a few real physical
-parameters, drop it into a designed arena, and let it play out. No gacha, no
-special-cased "abilities," no animation to author - every part you customize is
-just a number the simulation reads, and every arena is a composition of a
-handful of generic force primitives. Kotlin end to end: a shared physics
-engine, a self-hosted Ktor backend for PvP + a leaderboard, and an Android/
-Compose client.
+SpecPage is an [Atlassian Forge](https://developer.atlassian.com/platform/forge/) app. It adds a Confluence macro that renders interactive API documentation from OpenAPI 3.0 / 3.1 / 3.2 or Swagger 2.0 specs.
 
-## Why this shape
+## Features
 
-The brief was: keep it simple, but let the physics carry the depth. Concretely:
+| Area | What it does |
+|---|---|
+| **Sources** | Page attachment, Git (GitHub, GitHub Enterprise Server, GitLab SaaS / self-managed, Bitbucket Cloud), https URL, or pasted text |
+| **Multi-file specs** | Relative `$ref`s (`./schemas/pet.yaml`) are resolved from the same repository or page and bundled into one document |
+| **Private repositories** | Admin-managed Git connections. Tokens are encrypted in Forge secret storage and never sent to the browser. Each connection has a repository allow-list and optional space restrictions |
+| **Try it out** | Requests are relayed by the app backend, so browser CORS limits don't apply. Off by default; only admin-approved API hosts and only signed-in licensed users |
+| **Filtering** | Show only selected tags or path prefixes, hide deprecated operations |
+| **Display** | Expansion mode, max height, toggle info / servers / schemas / search box, custom title |
+| **Multiple macros per page** | Each macro is independent |
+| **Live preview** | The config dialog renders the spec as you edit. Paste a GitHub / GitLab / Bitbucket file link to fill in repo, branch and path |
+| **Search** | API title, endpoints and summaries are added to Confluence search (indexed macro parameter) |
+| **PDF / Word export** | Exports render a static endpoint table instead of an empty box |
+| **Public spaces** | Guests and anonymous visitors can read docs (they can never use "Try it out") |
+| **Theming** | Follows Confluence light / dark themes via Atlassian design tokens |
+| **Performance** | Git / URL specs are cached (configurable TTL). Attachments are never cached because access depends on the reader's permissions |
+| **Strict security** | No inline scripts or styles, no `eval`, no `unsafe-*` CSP entries, no static egress |
 
-- **A part is a physical quantity, not a hidden stat block.** `TopConfig` (see
-  `core/src/main/kotlin/tops/physics/TopConfig.kt`) has exactly the fields a
-  spinning top actually has: mass, radius, how the mass is distributed between
-  the center and the rim (moment of inertia), how far off-center that mass
-  sits, tip friction, lateral grip, and collision restitution. There is no
-  code anywhere that special-cases "if part == X". Two tops with the same
-  numbers play identically, always.
-- **Real tradeoffs, not free variety.** Rim-weighted mass distribution
-  resists spin-down and knockback (real physics: `I = k*m*r^2`), but the same
-  inertia makes a top sluggish to redirect after a hit. An off-center mass
-  induces a growing wobble as spin decays, so it topples earlier - a genuine
-  cost for whatever else it buys you. See `Simulation.kt` for the exact
-  equations; the doc comments there spell out the reasoning per force.
-- **Arenas are composed, not hand-coded.** An arena is a wall + a parabolic
-  "bowl" restoring force + a short list of generic zones (`Pit`, `Bumper`,
-  `GripZone`). Three very differently-playing arenas ship in
-  `server/src/main/kotlin/tops/server/arena/Arenas.kt` and none of them needed
-  new code - only new placements of the same primitives.
-- **The server is the only physics authority.** A match's outcome is computed
-  once, server-side, the instant every player has submitted a launch. Clients
-  never run PvP physics themselves and never need to agree on floating-point
-  behavior with each other - they just replay the frames the server computed.
-  (Practice mode is the one exception, by design: it runs the same
-  `Simulation` locally so you can play solo with zero network dependency.)
-- **No accounts, no email, no login.** A player types a display name once;
-  the server hands back an id and a secret token, and only the token's hash
-  is ever stored. That's deliberately lighter than real auth - see "Security
-  model" below for why that's an appropriate tradeoff here and not elsewhere.
+## Security model
+
+- **No egress by default.** The manifest declares no external hosts. A Confluence admin approves each Git host, spec host and "Try it out" API host in SpecPage settings using Forge [customer-managed egress](https://developer.atlassian.com/platform/forge/customer-managed-egress-and-remotes/). Atlassian shows its own consent dialog, and approvals can be revoked in Atlassian Administration → Connected apps.
+  - Trade-off: apps using customer-managed egress are **not eligible for the "Runs on Atlassian" badge**.
+- **Authorization uses the trusted resolver context**, never browser-supplied values. Saved macro config, page ID and space key come from the Forge context.
+  - Unsaved preview config is accepted only from licensed users.
+  - Admin functions verify Confluence admin rights with the user's own permissions (`/wiki/rest/api/user/current?expand=operations`).
+- **Attachments:** licensed users read them with their own permissions. Guests and anonymous visitors (who cannot make `asUser()` calls) are served only attachments of the page they are viewing.
+- **Git:** repository allow-lists, path normalisation (no `..` escapes, spec extensions only), and parsing as OpenAPI before anything is returned. Together these stop the macro being used to read arbitrary repository files.
+- **Try it out proxy:** strips cookies, hop-by-hop and `sec-*` headers, does not follow redirects, uses https only, and caps request (400 KB) and response (4 MB) sizes.
 
 ## Project layout
 
 ```
-core/    pure Kotlin, no Android/server deps - physics engine + wire protocol.
-         Runs identically on the JVM server and inside the Android app.
-server/  Ktor backend: match orchestration, the authoritative simulation run,
-         Postgres-backed leaderboard, Docker packaging.
-app/     Android/Compose client: top builder, practice mode, online battles,
-         leaderboard.
+manifest.yml            Forge manifest (macro, admin settings page, functions)
+src/index.ts            Resolver + adfExport handlers
+src/backend/            Spec loading, sources, $ref bundling, cache, proxy, admin, export
+src/shared/             Types and pure logic shared by backend and UI
+static/app/             Custom UI (Vite + React + Swagger UI): macro, config, admin entries
+test/                   Unit tests (Vitest) with mocked Forge APIs
+e2e/                    Browser tests (Playwright) under a strict CSP with a mocked bridge
 ```
 
-Splitting out `core` is what makes "the server is the only physics
-authority" actually safe: the server can validate what a client's replay
-*should* look like, and a client can run the identical solo-practice sim,
-because there's exactly one implementation of the rules.
+## Develop and verify
 
-## The physics, in short
+Requires Node 22+ (24 recommended).
 
-Each tick (`Simulation.step`, fixed 1/120s):
-
-1. **Spin decay** - friction between the tip and the floor slows the spin.
-   Mass cancels out of the decay rate (as it does physically - torque and
-   inertia both scale with mass), so a heavier top doesn't spin longer, it
-   just hits harder.
-2. **Wobble/elimination** - below a spin-rate threshold a top topples. An
-   off-center mass raises that threshold, i.e. makes it topple sooner.
-3. **Arena forces** - a parabolic restoring force toward the center (the
-   "bowl"), plus whatever `ArenaFeature`s the arena places: a `Bumper` pushes
-   tops outward from a point, a `GripZone` multiplies effective grip
-   (slick or rough patches), a `Pit` eliminates on contact.
-4. **Grip damping** - lateral grip bleeds linear speed; low-grip tops drift
-   and roam (attack), high-grip tops stay near their drop point (defense).
-5. **Collisions** - an impulse-based bounce (using each top's mass and
-   restitution) plus Coulomb friction at the contact point that trades spin
-   for push, and vice versa, between the two tops. This is what makes tip
-   friction and spin rate matter *during* a hit, not just before it.
-
-All of it is unit-tested in `core/src/test/kotlin/tops/physics/SimulationTest.kt`
-(spin decay direction and monotonicity, inertia-ratio comparisons, imbalance
-vs. topple timing, ring-out vs. solid-wall arenas, collision stability, and a
-full match simulation). Run with:
-
-```
-./gradlew :core:test
+```bash
+npm install            # also installs static/app
+npm run verify         # typecheck + lint + unit tests + UI build
+npm run test:e2e       # browser tests (set PLAYWRIGHT_CHROMIUM_PATH if needed)
 ```
 
-## Running the backend on your homelab
+## Deploy to your Confluence site
 
-The server is a normal Ktor app with Postgres for durable state (leaderboard
-+ completed match results); in-progress lobbies are just in-memory, which is
-fine since they're short-lived.
+1. Create a free developer site at https://developer.atlassian.com (Confluence Cloud).
+2. Install the Forge CLI and log in:
+   ```bash
+   npm install -g @forge/cli
+   forge login            # uses an Atlassian API token
+   ```
+3. Register the app. This replaces the placeholder `app.id` in `manifest.yml`:
+   ```bash
+   forge register
+   ```
+4. Build, lint, deploy and install:
+   ```bash
+   npm run build
+   forge lint
+   forge deploy
+   forge install          # choose Confluence and your site
+   ```
+5. In Confluence, type `/OpenAPI` in the editor to insert the macro.
+6. Open **Manage apps → SpecPage → Configure** to add Git connections and approve hosts.
 
-```
-docker compose up -d --build
-```
+After changing `manifest.yml` permissions, run `forge deploy` followed by `forge install --upgrade`.
 
-This builds `server/Dockerfile` (multi-stage: Gradle build, then a bare JRE
-image running the fat jar) and starts Postgres alongside it. By default it
-binds `0.0.0.0:8081` - for a friends-only server, bind it to your Tailscale
-interface instead so it's reachable over the tailnet but not the open LAN:
+## Limits
 
-```
-BIND_ADDRESS=$(tailscale ip -4) docker compose up -d --build
-```
-
-Point the Android app's "server address" field at
-`http://<that-tailscale-ip>:8081`.
-
-Environment variables (all optional, see `docker-compose.yml`):
-`PORT`, `DB_URL`, `DB_DRIVER`, `DB_USER`, `DB_PASSWORD`, `POSTGRES_PASSWORD`,
-`BIND_ADDRESS`.
-
-### Security model
-
-There's no email/password account system - a player registers a display name
-once and gets back a secret token; only its SHA-256 hash is ever stored, and
-every authenticated request needs both the player id and the token. That's
-enough to stop one friend from impersonating another *on the same network*,
-which is the actual threat model for a server that's only reachable over
-Tailscale in the first place. It is **not** meant to resist a hostile public
-internet - don't expose port 8081 outside your tailnet.
-
-## Running the Android app
-
-```
-./gradlew :app:installDebug   # with a device/emulator attached
-```
-
-On first launch it asks for a display name and the server's Tailscale
-address, registers once, and remembers both (`DataStore`, on-device only).
-
-- **Build my top** - every slider is a direct `TopConfig` field; the "Balance"
-  slider's range depends on the current radius exactly the way the physics
-  requires (see `TopConfig`'s `require()` checks).
-- **Practice (offline)** - taps to choose a drop point, then press-and-hold
-  to charge power (Mario-Golf-strength-bar style); release launches. Runs
-  `Simulation` locally, no server involved.
-- **Battle (online)** - host a match (mode + arena) and share the match code,
-  or join one with a code. Once everyone's launched, the server computes the
-  match and every client replays the identical result.
-- **Leaderboard** - wins/matches per player, pulled from the server.
-
-## What wasn't verified in this environment
-
-This was built in a sandbox with no Android SDK and no route to Google's
-Maven repo (`dl.google.com` was unreachable), so:
-
-- `:core` and `:server` were fully built, unit-tested, and smoke-tested here
-  (register → create match → join → launch → authoritative simulation →
-  result → leaderboard, all against a live instance; the exact fat jar the
-  Dockerfile packages was also run standalone and verified to serve
-  requests).
-- `:app` (the Compose UI) could **not** be compiled here, since the Android
-  Gradle Plugin and AndroidX artifacts live on Google's Maven repo. It was
-  written and carefully reviewed by hand (including catching and fixing a
-  Compose scope-receiver bug in `OnlineMatchScreen.kt` during review), but
-  you should do a build on a normal machine (`./gradlew :app:assembleDebug`)
-  before trusting it fully.
-- Building the actual Docker image wasn't possible either (no Docker daemon
-  in this sandbox) - only the fat jar it packages was verified.
-
-## Known simplifications / good next steps
-
-- A match that hits the time limit with more than one top still standing
-  currently counts as a draw where everyone survives (handled without
-  crashing, just worth knowing about).
-- Replay rendering on the client uses a fixed visual radius per top, since
-  per-top radius isn't currently threaded through the match-complete payload
-  the same way position/spin are - trivial to add if it bothers you.
-- The server already exposes a match WebSocket for push-based lobby/result
-  updates; the Android client currently just polls once a second instead,
-  which is simpler and plenty responsive for a small friends server, but the
-  socket is there if you want a snappier lobby later.
+| Item | Limit |
+|---|---|
+| Spec size (including referenced files) | 4.5 MB (Forge invocation responses are capped at 5 MB) |
+| Referenced files | 50 |
+| Pasted specs | 100,000 characters |
+| Approved hosts | 10 per list (Forge limit); wildcards such as `*.example.com` are supported |
+| "Try it out" multipart / file uploads | Not supported |
+| OAuth2 authorization flows in "Try it out" | Not supported; API keys and bearer tokens work |
+| AsyncAPI | Not supported |
+| Azure DevOps | Not supported yet |

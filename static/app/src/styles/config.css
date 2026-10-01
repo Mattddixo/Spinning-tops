@@ -1,0 +1,93 @@
+.sp-config {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: var(--sp-space-300);
+  min-height: 100vh;
+  padding: var(--sp-space-200);
+  background: var(--ds-surface-overlay, var(--sp-surface));
+}
+
+@media (max-width: 900px) {
+  .sp-config {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sp-config-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-space-200);
+  min-width: 0;
+}
+
+.sp-config-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-space-100);
+  margin-top: auto;
+  padding: var(--sp-space-150) 0;
+  border-top: 1px solid var(--sp-border);
+  background: var(--ds-surface-overlay, var(--sp-surface));
+}
+
+.sp-config-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-space-150);
+  min-width: 0;
+  padding-left: var(--sp-space-300);
+  border-left: 1px solid var(--sp-border);
+}
+
+@media (max-width: 900px) {
+  .sp-config-preview {
+    padding-left: 0;
+    border-left: 0;
+    border-top: 1px solid var(--sp-border);
+    padding-top: var(--sp-space-200);
+  }
+}
+
+.sp-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-space-150);
+}
+
+.sp-grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.sp-row-bottom {
+  align-items: flex-end;
+  flex-wrap: nowrap;
+}
+
+.sp-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-space-100);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.sp-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-space-100) var(--sp-space-200);
+}
+
+.sp-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-space-050);
+  cursor: pointer;
+}
+
+textarea.sp-input.sp-input-short {
+  min-height: 64px;
+}

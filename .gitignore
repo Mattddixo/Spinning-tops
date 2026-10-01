@@ -1,9 +1,9 @@
-.gradle/
-build/
-*/build/
-.kotlin/
-local.properties
-/data/
-*.iml
-.idea/
+node_modules/
+static/app/dist/
+static/app/dist-harness/
+coverage/
+test-results/
+playwright-report/
+.env
+.DS_Store
 *.log

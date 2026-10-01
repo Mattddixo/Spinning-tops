@@ -1,0 +1,42 @@
+{
+  "name": "specpage",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SpecPage: OpenAPI and Swagger documentation for Confluence Cloud (Atlassian Forge app).",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm --prefix static/app run build",
+    "build:harness": "npm --prefix static/app run build:harness",
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm --prefix static/app run typecheck",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:e2e": "npm run build:harness && playwright test",
+    "forge:lint": "forge lint",
+    "verify": "npm run typecheck && npm run lint && npm test && npm run build",
+    "postinstall": "npm --prefix static/app install --no-audit --no-fund"
+  },
+  "scarfSettings": {
+    "enabled": false
+  },
+  "dependencies": {
+    "@apidevtools/json-schema-ref-parser": "16.0.3",
+    "@forge/api": "8.2.0",
+    "@forge/kvs": "2.0.7",
+    "@forge/resolver": "2.0.0",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.19.0",
+    "eslint": "10.11.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.13.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.0",
+    "vitest": "5.0.3"
+  }
+}

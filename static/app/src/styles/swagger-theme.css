@@ -1,0 +1,245 @@
+/*
+ * Swagger UI adjustments for Confluence: typography from the host theme,
+ * display options, and a dark theme driven by `html[data-color-mode]`,
+ * which Forge sets after `view.theme.enable()`.
+ */
+.sp-docs .swagger-ui {
+  font-family: var(--sp-font);
+  color: var(--sp-text);
+}
+
+.sp-docs .swagger-ui .wrapper {
+  max-width: none;
+  padding: 0;
+}
+
+.sp-docs .swagger-ui .information-container {
+  padding: 0;
+}
+
+.sp-docs .swagger-ui .info {
+  margin: var(--sp-space-200) 0;
+}
+
+.sp-docs .swagger-ui .info .title,
+.sp-docs .swagger-ui .opblock-tag,
+.sp-docs .swagger-ui .opblock .opblock-summary-description,
+.sp-docs .swagger-ui .opblock .opblock-summary-operation-id,
+.sp-docs .swagger-ui .opblock .opblock-summary-path,
+.sp-docs .swagger-ui .markdown p,
+.sp-docs .swagger-ui .renderedMarkdown p,
+.sp-docs .swagger-ui table thead tr td,
+.sp-docs .swagger-ui table thead tr th,
+.sp-docs .swagger-ui .parameter__name,
+.sp-docs .swagger-ui .response-col_status,
+.sp-docs .swagger-ui .model-title,
+.sp-docs .swagger-ui section.models h4,
+.sp-docs .swagger-ui .btn,
+.sp-docs .swagger-ui label,
+.sp-docs .swagger-ui select {
+  font-family: var(--sp-font);
+}
+
+.sp-docs .swagger-ui .scheme-container {
+  margin: 0 0 var(--sp-space-200);
+  padding: var(--sp-space-150) 0;
+  box-shadow: none;
+  background: transparent;
+  border-top: 1px solid var(--sp-border);
+  border-bottom: 1px solid var(--sp-border);
+}
+
+.sp-docs .swagger-ui .filter-container .operation-filter-input {
+  margin: var(--sp-space-100) 0;
+  border-color: var(--sp-border-input);
+}
+
+.sp-docs-hide-info .swagger-ui .information-container {
+  display: none;
+}
+
+.sp-docs-hide-servers .swagger-ui .scheme-container {
+  display: none;
+}
+
+/* ---------- Dark theme ---------- */
+html[data-color-mode='dark'] .sp-docs .swagger-ui,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .info .title,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .info li,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .info p,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .info table,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock-tag,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock-tag small,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock .opblock-summary-description,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock .opblock-summary-path,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock .opblock-summary-operation-id,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock .opblock-section-header h4,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock .opblock-section-header > label,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock-description-wrapper p,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock-external-docs-wrapper p,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock-title_normal p,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .responses-inner h4,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .responses-inner h5,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .response-col_status,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .response-col_links,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .response-col_description,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .parameter__name,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .parameter__type,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .parameter__in,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .parameter__extension,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .parameter__deprecated,
+html[data-color-mode='dark'] .sp-docs .swagger-ui table thead tr td,
+html[data-color-mode='dark'] .sp-docs .swagger-ui table thead tr th,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .tab li,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .tab li button.tablinks,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .model,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .model-title,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .model .property,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .prop-type,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .prop-format,
+html[data-color-mode='dark'] .sp-docs .swagger-ui section.models h4,
+html[data-color-mode='dark'] .sp-docs .swagger-ui section.models h5,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .servers > label,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .servers-title,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .scheme-container .schemes > label,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .dialog-ux .modal-ux-content p,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .dialog-ux .modal-ux-content h4,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .dialog-ux .modal-ux-header h3,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .markdown p,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .markdown li,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .renderedMarkdown p,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .renderedMarkdown li,
+html[data-color-mode='dark'] .sp-docs .swagger-ui label,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .btn {
+  color: var(--sp-text);
+}
+
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock-tag,
+html[data-color-mode='dark'] .sp-docs .swagger-ui table thead tr td,
+html[data-color-mode='dark'] .sp-docs .swagger-ui table thead tr th,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .responses-inner h4,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock .opblock-section-header,
+html[data-color-mode='dark'] .sp-docs .swagger-ui section.models,
+html[data-color-mode='dark'] .sp-docs .swagger-ui section.models h4 {
+  border-color: var(--sp-border);
+}
+
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock .opblock-section-header,
+html[data-color-mode='dark'] .sp-docs .swagger-ui section.models .model-container,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .model-box,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .dialog-ux .modal-ux,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .dialog-ux .modal-ux-header {
+  background: var(--sp-surface-raised);
+  box-shadow: none;
+}
+
+html[data-color-mode='dark'] .sp-docs .swagger-ui section.models .model-container:hover {
+  background: var(--sp-bg-neutral);
+}
+
+html[data-color-mode='dark'] .sp-docs .swagger-ui input[type='text'],
+html[data-color-mode='dark'] .sp-docs .swagger-ui input[type='password'],
+html[data-color-mode='dark'] .sp-docs .swagger-ui input[type='search'],
+html[data-color-mode='dark'] .sp-docs .swagger-ui input[type='email'],
+html[data-color-mode='dark'] .sp-docs .swagger-ui input[type='file'],
+html[data-color-mode='dark'] .sp-docs .swagger-ui textarea,
+html[data-color-mode='dark'] .sp-docs .swagger-ui select {
+  background-color: var(--sp-bg-input);
+  color: var(--sp-text);
+  border-color: var(--sp-border-input);
+}
+
+/* Swagger's select arrow is a dark image; use the native arrow in dark mode instead. */
+html[data-color-mode='dark'] .sp-docs .swagger-ui select {
+  background-image: none;
+  appearance: auto;
+  color-scheme: dark;
+}
+
+/* Swagger UI icons draw with fill="currentColor", so give their buttons the theme text colour. */
+html[data-color-mode='dark'] .sp-docs .swagger-ui svg.arrow,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock-control-arrow,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock-summary-control,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .expand-operation,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .models-control,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .model-box-control,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .copy-to-clipboard,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .authorization__btn,
+html[data-color-mode='dark'] .sp-docs .swagger-ui section.models h4 svg {
+  color: var(--sp-text);
+  fill: currentColor;
+}
+
+html[data-color-mode='dark'] .sp-docs .swagger-ui .model-box-control,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .models-control,
+html[data-color-mode='dark'] .sp-docs .swagger-ui section.models .model-container button,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .model-box button {
+  background: transparent;
+}
+
+html[data-color-mode='dark'] .sp-docs .swagger-ui .model-toggle::after {
+  filter: invert(0.85);
+}
+
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock .opblock-summary-method {
+  color: #ffffff;
+}
+
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock.opblock-get,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock.opblock-post,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock.opblock-put,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock.opblock-delete,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock.opblock-patch,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock.opblock-head,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock.opblock-options,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .opblock.opblock-deprecated {
+  background: var(--sp-surface-raised);
+}
+
+html[data-color-mode='dark'] .sp-docs .swagger-ui .scheme-container {
+  background: transparent;
+}
+
+html[data-color-mode='dark'] .sp-docs .swagger-ui .prop-type,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .model .prop-type,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .model .property.primitive {
+  color: var(--ds-text-accent-purple, #c7b0ff);
+}
+
+html[data-color-mode='dark'] .sp-docs .swagger-ui .parameter__name.required::after,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .parameter__name.required span {
+  color: var(--ds-text-danger, #fd9891);
+}
+
+html[data-color-mode='dark'] .sp-docs .swagger-ui .markdown code,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .renderedMarkdown code {
+  background: var(--sp-bg-neutral);
+  color: var(--sp-text);
+}
+
+/* OpenAPI 3.1+ schemas render with the JSON Schema 2020-12 components. */
+html[data-color-mode='dark'] .sp-docs .swagger-ui [class*='json-schema-2020-12'] {
+  color: var(--sp-text);
+}
+
+html[data-color-mode='dark'] .sp-docs .swagger-ui .json-schema-2020-12-accordion,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .json-schema-2020-12-expand-deep-button {
+  background: transparent;
+}
+
+html[data-color-mode='dark'] .sp-docs .swagger-ui .json-schema-2020-12-expand-deep-button {
+  color: var(--sp-text-subtlest);
+}
+
+html[data-color-mode='dark'] .sp-docs .swagger-ui article.json-schema-2020-12 {
+  background: var(--sp-bg-neutral);
+}
+
+html[data-color-mode='dark'] .sp-docs .swagger-ui .json-schema-2020-12__attribute--primary {
+  color: var(--ds-text-accent-purple, #c7b0ff);
+}
+
+html[data-color-mode='dark'] .sp-docs .swagger-ui .json-schema-2020-12__attribute--muted,
+html[data-color-mode='dark'] .sp-docs .swagger-ui .json-schema-2020-12-keyword__name--secondary {
+  color: var(--sp-text-subtle);
+}

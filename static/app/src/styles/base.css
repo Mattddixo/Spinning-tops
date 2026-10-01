@@ -1,0 +1,496 @@
+/*
+ * Base styles built on Atlassian Design System tokens. Forge injects the token
+ * values after `view.theme.enable()`, so light, dark and high-contrast themes
+ * follow Confluence automatically. Fallbacks keep the UI usable without them.
+ * No inline <style> or style attributes are used, so the default Custom UI
+ * Content Security Policy applies unchanged.
+ */
+:root {
+  --sp-text: var(--ds-text, #172b4d);
+  --sp-text-subtle: var(--ds-text-subtle, #44546f);
+  --sp-text-subtlest: var(--ds-text-subtlest, #626f86);
+  --sp-link: var(--ds-link, #0c66e4);
+  --sp-surface: var(--ds-surface, #ffffff);
+  --sp-surface-sunken: var(--ds-surface-sunken, #f7f8f9);
+  --sp-surface-raised: var(--ds-surface-raised, #ffffff);
+  --sp-border: var(--ds-border, #091e4224);
+  --sp-border-input: var(--ds-border-input, #8590a2);
+  --sp-border-focused: var(--ds-border-focused, #388bff);
+  --sp-bg-input: var(--ds-background-input, #ffffff);
+  --sp-bg-neutral: var(--ds-background-neutral, #091e420f);
+  --sp-bg-neutral-hovered: var(--ds-background-neutral-hovered, #091e4224);
+  --sp-bg-brand: var(--ds-background-brand-bold, #0c66e4);
+  --sp-bg-brand-hovered: var(--ds-background-brand-bold-hovered, #0055cc);
+  --sp-text-inverse: var(--ds-text-inverse, #ffffff);
+  --sp-bg-selected: var(--ds-background-selected, #e9f2ff);
+  --sp-text-selected: var(--ds-text-selected, #0c66e4);
+  --sp-bg-danger: var(--ds-background-danger, #ffeceb);
+  --sp-bg-danger-bold: var(--ds-background-danger-bold, #c9372c);
+  --sp-bg-warning: var(--ds-background-warning, #fff7d6);
+  --sp-bg-success: var(--ds-background-success, #dcfff1);
+  --sp-bg-information: var(--ds-background-information, #e9f2ff);
+  --sp-icon-danger: var(--ds-icon-danger, #c9372c);
+  --sp-icon-warning: var(--ds-icon-warning, #e56910);
+  --sp-icon-success: var(--ds-icon-success, #22a06b);
+  --sp-icon-information: var(--ds-icon-information, #1d7afc);
+  --sp-radius: var(--ds-border-radius, 3px);
+  --sp-space-050: var(--ds-space-050, 4px);
+  --sp-space-100: var(--ds-space-100, 8px);
+  --sp-space-150: var(--ds-space-150, 12px);
+  --sp-space-200: var(--ds-space-200, 16px);
+  --sp-space-300: var(--ds-space-300, 24px);
+  --sp-font: var(--ds-font-family-body, ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif);
+  --sp-font-code: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--sp-text);
+  font-family: var(--sp-font);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+a {
+  color: var(--sp-link);
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 600;
+  color: var(--sp-text);
+}
+
+h1 {
+  font-size: 20px;
+  line-height: 24px;
+}
+
+h2 {
+  font-size: 16px;
+  line-height: 20px;
+}
+
+h3 {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+p {
+  margin: 0;
+}
+
+code,
+pre,
+textarea.sp-code {
+  font-family: var(--sp-font-code);
+}
+
+.sp-visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Layout helpers */
+.sp-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-space-150);
+}
+
+.sp-stack-tight {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-space-050);
+}
+
+.sp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-space-100);
+  flex-wrap: wrap;
+}
+
+.sp-row-end {
+  justify-content: flex-end;
+}
+
+.sp-spacer {
+  flex: 1;
+}
+
+.sp-muted {
+  color: var(--sp-text-subtle);
+}
+
+.sp-small {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--sp-text-subtlest);
+}
+
+/* Buttons */
+.sp-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-space-050);
+  height: 32px;
+  padding: 0 var(--sp-space-150);
+  border: 0;
+  border-radius: var(--sp-radius);
+  background: var(--sp-bg-neutral);
+  color: var(--sp-text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sp-button:hover {
+  background: var(--sp-bg-neutral-hovered);
+}
+
+.sp-button:focus-visible,
+.sp-input:focus-visible,
+.sp-select:focus-visible,
+.sp-tab:focus-visible,
+.sp-toggle input:focus-visible + .sp-toggle-track {
+  outline: 2px solid var(--sp-border-focused);
+  outline-offset: 2px;
+}
+
+.sp-button[disabled] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.sp-button-primary {
+  background: var(--sp-bg-brand);
+  color: var(--sp-text-inverse);
+}
+
+.sp-button-primary:hover {
+  background: var(--sp-bg-brand-hovered);
+}
+
+.sp-button-danger {
+  background: var(--sp-bg-danger-bold);
+  color: var(--sp-text-inverse);
+}
+
+.sp-button-subtle {
+  background: transparent;
+}
+
+.sp-button-compact {
+  height: 24px;
+  padding: 0 var(--sp-space-100);
+  font-size: 12px;
+}
+
+/* Form fields */
+.sp-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-space-050);
+}
+
+.sp-label {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--sp-text-subtle);
+}
+
+.sp-input,
+.sp-select,
+textarea.sp-input {
+  width: 100%;
+  min-height: 32px;
+  padding: var(--sp-space-050) var(--sp-space-100);
+  border: 1px solid var(--sp-border-input);
+  border-radius: var(--sp-radius);
+  background: var(--sp-bg-input);
+  color: var(--sp-text);
+  font: inherit;
+}
+
+textarea.sp-input {
+  resize: vertical;
+  min-height: 160px;
+  font-family: var(--sp-font-code);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.sp-input[aria-invalid='true'] {
+  border-color: var(--sp-icon-danger);
+}
+
+.sp-help {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--sp-text-subtlest);
+}
+
+.sp-error-text {
+  font-size: 12px;
+  color: var(--sp-icon-danger);
+}
+
+/* Toggle */
+.sp-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-space-100);
+  cursor: pointer;
+}
+
+.sp-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.sp-toggle-track {
+  position: relative;
+  flex: none;
+  width: 32px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--sp-border-input);
+  transition: background 0.15s;
+}
+
+.sp-toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--sp-surface);
+  transition: transform 0.15s;
+}
+
+.sp-toggle input:checked + .sp-toggle-track {
+  background: var(--sp-bg-brand);
+}
+
+.sp-toggle input:checked + .sp-toggle-track::after {
+  transform: translateX(16px);
+}
+
+.sp-toggle input:disabled + .sp-toggle-track {
+  opacity: 0.5;
+}
+
+/* Section messages */
+.sp-message {
+  display: flex;
+  gap: var(--sp-space-150);
+  padding: var(--sp-space-150) var(--sp-space-200);
+  border-radius: var(--sp-radius);
+  background: var(--sp-bg-information);
+}
+
+.sp-message-icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--sp-icon-information);
+  color: var(--sp-text-inverse);
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+}
+
+.sp-message-error {
+  background: var(--sp-bg-danger);
+}
+
+.sp-message-error .sp-message-icon {
+  background: var(--sp-icon-danger);
+}
+
+.sp-message-warning {
+  background: var(--sp-bg-warning);
+}
+
+.sp-message-warning .sp-message-icon {
+  background: var(--sp-icon-warning);
+}
+
+.sp-message-success {
+  background: var(--sp-bg-success);
+}
+
+.sp-message-success .sp-message-icon {
+  background: var(--sp-icon-success);
+}
+
+.sp-message-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-space-050);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Tabs */
+.sp-tabs {
+  display: flex;
+  gap: var(--sp-space-050);
+  border-bottom: 2px solid var(--sp-border);
+}
+
+.sp-tab {
+  padding: var(--sp-space-100) var(--sp-space-150);
+  margin-bottom: -2px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--sp-text-subtle);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.sp-tab[aria-selected='true'] {
+  color: var(--sp-text-selected);
+  border-bottom-color: var(--sp-text-selected);
+}
+
+/* Choice cards (source picker) */
+.sp-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--sp-space-100);
+}
+
+.sp-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-space-100) var(--sp-space-150);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-radius);
+  background: var(--sp-surface);
+  color: var(--sp-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sp-choice[aria-checked='true'] {
+  border-color: var(--sp-text-selected);
+  background: var(--sp-bg-selected);
+}
+
+.sp-choice[disabled] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.sp-choice-title {
+  font-weight: 600;
+}
+
+/* Cards and tables */
+.sp-card {
+  padding: var(--sp-space-200);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-radius);
+  background: var(--sp-surface-raised);
+}
+
+.sp-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sp-table th,
+.sp-table td {
+  padding: var(--sp-space-100);
+  border-bottom: 1px solid var(--sp-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.sp-table th {
+  font-size: 12px;
+  color: var(--sp-text-subtle);
+}
+
+.sp-lozenge {
+  display: inline-block;
+  padding: 0 var(--sp-space-050);
+  border-radius: var(--sp-radius);
+  background: var(--sp-bg-neutral);
+  color: var(--sp-text-subtle);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.sp-lozenge-success {
+  background: var(--sp-bg-success);
+  color: var(--sp-text);
+}
+
+.sp-lozenge-warning {
+  background: var(--sp-bg-warning);
+  color: var(--sp-text);
+}
+
+/* Spinner */
+.sp-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--sp-border);
+  border-top-color: var(--sp-text-selected);
+  border-radius: 50%;
+  animation: sp-spin 0.8s linear infinite;
+}
+
+@keyframes sp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+.sp-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-space-100);
+  padding: var(--sp-space-200);
+  color: var(--sp-text-subtle);
+}
