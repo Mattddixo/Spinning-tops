@@ -16,7 +16,7 @@
     "test:e2e": "npm run build:harness && playwright test",
     "forge:lint": "forge lint",
     "verify": "npm run typecheck && npm run lint && npm test && npm run build",
-    "postinstall": "npm --prefix static/app install --no-audit --no-fund"
+    "postinstall": "node scripts/install-ui.mjs"
   },
   "scarfSettings": {
     "enabled": false
