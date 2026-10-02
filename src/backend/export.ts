@@ -1,7 +1,8 @@
-import { filterSpec, summarizeSpec } from '../shared/spec';
+import { applyServerOverride, filterSpec, summarizeSpec } from '../shared/spec';
 import type { MacroConfig, SpecSummary } from '../shared/types';
 import { readContext } from './context';
 import { AppFailure } from './errors';
+import { decodeSpec } from './encoding';
 import { loadSpec } from './loadSpec';
 
 // PDF/Word export can't run Swagger UI, so export a plain endpoint table (ADF).
@@ -66,7 +67,8 @@ export async function exportMacro(payload: { config?: MacroConfig; exportType?: 
     const raw = (payload.context ?? {}) as Record<string, unknown> & { extension?: Record<string, unknown> };
     const ctx = readContext({ ...raw, accountId: undefined, accountType: 'anonymous', extension: { ...raw.extension, config } });
     const loaded = await loadSpec(ctx, config);
-    const filtered = filterSpec(loaded.spec, config);
+    const spec = applyServerOverride(decodeSpec(loaded.specGz), loaded.summary.kind, config.serverUrl);
+    const filtered = filterSpec(spec, config);
     return buildExportAdf(summarizeSpec(filtered, loaded.summary.kind), config, loaded.meta.sourceLink);
   } catch (err) {
     // Don't return null here, it can break the whole page's PDF export.

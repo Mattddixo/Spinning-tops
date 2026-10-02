@@ -1,16 +1,33 @@
 import { router, view } from '@forge/bridge';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { appError } from '../../../../src/shared/messages';
+import { buildSearchText, filterSpec, summarizeSpec } from '../../../../src/shared/spec';
 import type { AppError, LoadSpecResponse, MacroConfig } from '../../../../src/shared/types';
 import { call, invoke, toAppError } from '../api';
 import { mount } from '../bootstrap';
 import { ApiDocs } from '../components/ApiDocs';
-import { Button, ErrorMessage, Loading } from '../components/ui';
+import { Button, ErrorMessage, Loading, Message } from '../components/ui';
 import { downloadJson, KIND_LABELS, relativeTime, slugify } from '../format';
+import { noticeText, useI18n } from '../i18n';
+import { decodeSpec } from '../spec-transport';
 import '../styles/macro.css';
 
-type State = { status: 'loading' } | { status: 'error'; error: AppError } | { status: 'ready'; data: LoadSpecResponse };
+type Ready = { data: LoadSpecResponse; spec: Record<string, unknown> };
+type State = { status: 'loading' } | { status: 'error'; error: AppError } | ({ status: 'ready' } & Ready);
+
+async function fetchSpec(refresh: boolean): Promise<Ready> {
+  const data = await call(invoke('loadSpec', refresh ? { refresh: true } : {}));
+  let spec: Record<string, unknown>;
+  try {
+    spec = await decodeSpec(data.specGz);
+  } catch (err) {
+    throw appError('INTERNAL', 'ui.macro.decodeFailed', undefined, { detail: err instanceof Error ? err.message : String(err) });
+  }
+  return { data, spec };
+}
 
 function MacroApp() {
+  const { t, locale } = useI18n();
   const [config, setConfig] = useState<MacroConfig>({});
   const [isEditing, setIsEditing] = useState(false);
   const [state, setState] = useState<State>({ status: 'loading' });
@@ -19,10 +36,9 @@ function MacroApp() {
 
   const load = useCallback(async (refresh = false) => {
     try {
-      const data = await call(invoke('loadSpec', refresh ? { refresh: true } : {}));
-      setState({ status: 'ready', data });
+      setState({ status: 'ready', ...(await fetchSpec(refresh)) });
     } catch (err) {
-      setState({ status: 'error', error: toAppError(err) });
+      setState({ status: 'error', error: err && typeof err === 'object' && 'code' in err ? (err as AppError) : toAppError(err) });
     }
   }, []);
 
@@ -46,19 +62,25 @@ function MacroApp() {
     }
   }, [state.status]);
 
+  // Confluence indexes the searchText saved with the macro. It's only rebuilt
+  // when the macro is saved, so tell editors when the spec has moved on.
+  const searchStale = useMemo(() => {
+    if (state.status !== 'ready' || !isEditing || !config.sourceType) return false;
+    const filtered = filterSpec(state.spec, config);
+    const current = buildSearchText(summarizeSpec(filtered, state.data.summary.kind));
+    return current !== (config.searchText ?? '');
+  }, [state, isEditing, config]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await load(true);
     setRefreshing(false);
   };
 
-  if (state.status === 'loading') return <Loading label="Loading API documentation…" />;
+  if (state.status === 'loading') return <Loading label={t('ui.macro.loading')} />;
 
   if (state.status === 'error') {
-    const error =
-      state.error.code === 'NOT_CONFIGURED' && !isEditing
-        ? { ...state.error, detail: state.error.detail ?? 'Edit the page, select this macro and choose Edit to pick an API spec.' }
-        : state.error;
+    const { error } = state;
     return (
       <div className="sp-macro">
         <ErrorMessage
@@ -66,7 +88,7 @@ function MacroApp() {
           actions={
             error.code !== 'NOT_CONFIGURED' && error.code !== 'LICENSE_INACTIVE' ? (
               <Button compact onClick={onRefresh} disabled={refreshing}>
-                {refreshing ? 'Retrying…' : 'Try again'}
+                {refreshing ? t('ui.common.retrying') : t('ui.common.retry')}
               </Button>
             ) : undefined
           }
@@ -75,10 +97,19 @@ function MacroApp() {
     );
   }
 
-  const { data } = state;
-  const effective: MacroConfig = { ...config };
+  const { data, spec } = state;
+  // Readers only need warnings that change what they can do; the rest
+  // (merged files, resolved servers) is for whoever maintains the macro.
+  const warnings = data.meta.warnings.filter((w) => isEditing || w.key === 'warnings.relativeServers');
+  const sourceLabel = config.sourceType === 'inline' ? t('ui.macro.pastedSpec') : data.meta.sourceLabel;
   const title = config.title?.trim() || data.summary.title;
   const maxHeight = Number(config.maxHeight) > 0 ? Number(config.maxHeight) : undefined;
+  const when = relativeTime(t, data.meta.fetchedAt, locale);
+  const sourceDetails = [
+    data.meta.fromCache ? t('ui.macro.cached', { when }) : t('ui.macro.loaded', { when }),
+    data.meta.fileCount > 1 ? t('ui.macro.files', { count: data.meta.fileCount }) : '',
+    data.summary.operations.length === 1 ? t('ui.macro.operationsOne') : t('ui.macro.operations', { count: data.summary.operations.length }),
+  ].filter(Boolean);
 
   return (
     <div className="sp-macro">
@@ -89,43 +120,48 @@ function MacroApp() {
           <span className="sp-lozenge">{KIND_LABELS[data.summary.kind]}</span>
         </div>
         <div className="sp-row">
-          <Button compact appearance="subtle" onClick={onRefresh} disabled={refreshing} title="Reload the spec from its source">
-            {refreshing ? 'Refreshing…' : 'Refresh'}
+          <Button compact appearance="subtle" onClick={onRefresh} disabled={refreshing} title={t('ui.macro.refreshTitle')}>
+            {refreshing ? t('ui.macro.refreshing') : t('ui.macro.refresh')}
           </Button>
           <Button
             compact
             appearance="subtle"
-            onClick={() => downloadJson(`${slugify(data.summary.title)}.openapi.json`, data.spec)}
-            title="Download the bundled spec as JSON"
+            onClick={() => downloadJson(`${slugify(data.summary.title)}.openapi.json`, spec)}
+            title={t('ui.macro.downloadTitle')}
           >
-            Download
+            {t('ui.macro.download')}
           </Button>
           <Button
             compact
             appearance="subtle"
             onClick={() => document.documentElement.requestFullscreen?.().catch(() => undefined)}
-            title="Show the documentation full screen"
+            title={t('ui.macro.fullscreenTitle')}
           >
-            Full screen
+            {t('ui.macro.fullscreen')}
           </Button>
         </div>
       </div>
       <p className="sp-small sp-macro-source">
         {data.meta.sourceLink ? (
           <button type="button" className="sp-link-button" onClick={() => router.open(data.meta.sourceLink as string)}>
-            {data.meta.sourceLabel}
+            {sourceLabel}
           </button>
         ) : (
-          data.meta.sourceLabel
+          sourceLabel
         )}
         {' · '}
-        {data.meta.fromCache ? `cached ${relativeTime(data.meta.fetchedAt)}` : `loaded ${relativeTime(data.meta.fetchedAt)}`}
-        {data.meta.fileCount > 1 ? ` · ${data.meta.fileCount} files` : ''}
-        {' · '}
-        {data.summary.operations.length} operations
+        {sourceDetails.join(' · ')}
       </p>
+      {searchStale ? <Message appearance="info">{t('ui.macro.staleSearch')}</Message> : null}
+      {warnings.length ? (
+        <Message appearance="warning">
+          {warnings.map((w) => (
+            <span key={w.key}>{noticeText(t, w)}</span>
+          ))}
+        </Message>
+      ) : null}
       <div className={maxHeight ? 'sp-macro-scroll' : undefined} style={maxHeight ? { maxHeight } : undefined}>
-        <ApiDocs spec={data.spec} config={effective} tryItOutAllowed={data.tryItOutAllowed} />
+        <ApiDocs spec={spec} config={config} tryItOutAllowed={data.tryItOutAllowed} />
       </div>
     </div>
   );

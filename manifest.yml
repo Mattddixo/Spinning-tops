@@ -6,8 +6,10 @@ modules:
       resource: ui/macro
       resolver:
         function: resolver
-      title: OpenAPI / Swagger docs (SpecPage)
-      description: Render interactive API documentation from an OpenAPI 3.x or Swagger 2.0 spec stored as a page attachment, in Git, at a URL, or pasted inline.
+      title:
+        i18n: manifest.macroTitle
+      description:
+        i18n: manifest.macroDescription
       category: embed
       # Let guests / anonymous users read docs on public spaces.
       # Try it out is still licensed-users-only (checked in the resolver).
@@ -19,7 +21,8 @@ modules:
         function: export
       config:
         resource: ui/config
-        title: Configure API documentation
+        title:
+          i18n: manifest.configTitle
         viewportSize: max
         openOnInsert: true
         parameters:
@@ -36,13 +39,34 @@ modules:
       resource: ui/admin
       resolver:
         function: resolver
-      title: SpecPage settings
+      title:
+        i18n: manifest.settingsTitle
       useAsConfig: true
   function:
     - key: resolver
       handler: index.handler
+      # Bundling many-file specs and gzip both want headroom over the default.
+      runtime:
+        memoryMB: 1024
     - key: export
       handler: index.exportHandler
+
+# UI text and the manifest strings above. Backend errors are sent with a key
+# and English text; the UI re-renders them from these catalogs.
+translations:
+  resources:
+    - key: en-US
+      path: locales/en-US.json
+    - key: de-DE
+      path: locales/de-DE.json
+    - key: fr-FR
+      path: locales/fr-FR.json
+    - key: es-ES
+      path: locales/es-ES.json
+    - key: ja-JP
+      path: locales/ja-JP.json
+  fallback:
+    default: en-US
 
 resources:
   - key: ui

@@ -1,24 +1,28 @@
+import type { Params } from '../shared/i18n';
+import { appError, type ErrorExtra } from '../shared/messages';
 import type { AppError, ErrorCode, Result } from '../shared/types';
 
-/** Thrown inside backend code and converted to a `Result` at the resolver boundary. */
+// Thrown inside backend code and turned into a Result at the resolver boundary.
 export class AppFailure extends Error {
-  readonly code: ErrorCode;
-  readonly detail?: string;
+  readonly error: AppError;
 
-  constructor(code: ErrorCode, message: string, detail?: string) {
-    super(message);
+  constructor(error: AppError) {
+    super(error.message);
     this.name = 'AppFailure';
-    this.code = code;
-    this.detail = detail;
+    this.error = error;
   }
 
-  toError(): AppError {
-    return this.detail ? { code: this.code, message: this.message, detail: this.detail } : { code: this.code, message: this.message };
+  get code(): ErrorCode {
+    return this.error.code;
   }
 }
 
-export const fail = (code: ErrorCode, message: string, detail?: string): never => {
-  throw new AppFailure(code, message, detail);
+export const fail = (code: ErrorCode, key: string, params?: Params, extra?: ErrorExtra): never => {
+  throw new AppFailure(appError(code, key, params, extra));
+};
+
+export const failWith = (error: AppError): never => {
+  throw new AppFailure(error);
 };
 
 // Wraps a resolver so it always returns a Result. Unknown errors get logged
@@ -27,8 +31,8 @@ export async function asResult<T>(name: string, body: () => Promise<T>): Promise
   try {
     return { ok: true, value: await body() };
   } catch (err) {
-    if (err instanceof AppFailure) return { ok: false, error: err.toError() };
+    if (err instanceof AppFailure) return { ok: false, error: err.error };
     console.error(`[${name}] unexpected error: ${err instanceof Error ? `${err.name}: ${err.message}` : 'unknown'}`);
-    return { ok: false, error: { code: 'INTERNAL', message: 'Something went wrong. Please try again.' } };
+    return { ok: false, error: appError('INTERNAL', 'errors.generic') };
   }
 }

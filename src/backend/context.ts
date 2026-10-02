@@ -48,7 +48,7 @@ export const isLicensedUser = (ctx: SecureContext) => ctx.accountType === 'licen
 
 export function requireLicense(ctx: SecureContext): void {
   if (!ctx.licenseActive) {
-    fail('LICENSE_INACTIVE', 'The SpecPage subscription for this site is not active. Ask a Confluence admin to renew it.');
+    fail('LICENSE_INACTIVE', 'errors.licenseInactive');
   }
 }
 
@@ -56,7 +56,7 @@ export function requireLicense(ctx: SecureContext): void {
 // config modal) is only accepted from licensed users.
 export function effectiveConfig(ctx: SecureContext, preview?: MacroConfig): MacroConfig {
   if (preview && typeof preview === 'object') {
-    if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'Previewing unsaved settings requires a licensed Confluence user.');
+    if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'errors.previewNeedsLicense');
     return preview;
   }
   return ctx.config;

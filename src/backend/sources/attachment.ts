@@ -1,17 +1,19 @@
 import { asApp, asUser, route } from '@forge/api';
 import { isSpecFilename } from '../../shared/git';
 import type { AttachmentOption } from '../../shared/types';
+import { checkBudget } from '../budget';
 import type { SecureContext } from '../context';
 import { isLicensedUser } from '../context';
 import { fail } from '../errors';
-import { MAX_SPEC_BYTES } from '../http';
+import { MAX_SOURCE_BYTES, MB } from '../limits';
 import { syntheticPath, syntheticUrl, type SpecSource } from './types';
 
-interface V2Attachment {
+export interface V2Attachment {
   id: string;
   title: string;
   mediaType?: string;
   fileSize?: number;
+  version?: { number?: number };
 }
 
 // Licensed users read as themselves. Guests/anonymous can't use asUser(), so
@@ -21,65 +23,72 @@ function requester(ctx: SecureContext) {
   return isLicensedUser(ctx) ? asUser() : asApp();
 }
 
-function contentCollection(ctx: SecureContext): 'pages' | 'blogposts' {
-  return ctx.contentType === 'blogpost' ? 'blogposts' : 'pages';
-}
-
 function requireContent(ctx: SecureContext): string {
-  if (!ctx.contentId) fail('BAD_REQUEST', 'Attachments can only be used inside a Confluence page or blog post.');
+  if (!ctx.contentId) fail('BAD_REQUEST', 'errors.attachmentsNeedPage');
   return ctx.contentId as string;
 }
 
-async function findAttachment(ctx: SecureContext, filename: string): Promise<V2Attachment> {
-  const contentId = requireContent(ctx);
-  const collection = contentCollection(ctx);
-  const path =
-    collection === 'blogposts'
-      ? route`/wiki/api/v2/blogposts/${contentId}/attachments?filename=${filename}&limit=10`
-      : route`/wiki/api/v2/pages/${contentId}/attachments?filename=${filename}&limit=10`;
-  const res = await requester(ctx).requestConfluence(path, { headers: { Accept: 'application/json' } });
-  if (res.status === 403 || res.status === 401) fail('FORBIDDEN', 'You do not have permission to view attachments on this page.');
-  if (!res.ok) fail('UPSTREAM_ERROR', `Confluence returned HTTP ${res.status} while listing attachments.`);
+function attachmentsRoute(ctx: SecureContext, query: { filename?: string; limit: number }) {
+  const id = requireContent(ctx);
+  const { filename, limit } = query;
+  if (ctx.contentType === 'blogpost') {
+    return filename
+      ? route`/wiki/api/v2/blogposts/${id}/attachments?filename=${filename}&limit=${limit}`
+      : route`/wiki/api/v2/blogposts/${id}/attachments?limit=${limit}`;
+  }
+  return filename
+    ? route`/wiki/api/v2/pages/${id}/attachments?filename=${filename}&limit=${limit}`
+    : route`/wiki/api/v2/pages/${id}/attachments?limit=${limit}`;
+}
+
+export async function findAttachment(ctx: SecureContext, filename: string): Promise<V2Attachment> {
+  checkBudget();
+  const res = await requester(ctx).requestConfluence(attachmentsRoute(ctx, { filename, limit: 10 }), {
+    headers: { Accept: 'application/json' },
+  });
+  if (res.status === 403 || res.status === 401) fail('FORBIDDEN', 'errors.attachmentsForbidden');
+  if (!res.ok) fail('UPSTREAM_ERROR', 'errors.confluenceListFailed', { status: res.status });
   const body = (await res.json()) as { results?: V2Attachment[] };
   const match = body.results?.find((a) => a.title === filename);
-  if (!match) {
-    return fail('NOT_FOUND', `The attachment "${filename}" was not found on this page.`, 'It may have been deleted or renamed. Edit the macro to pick another file.');
-  }
+  if (!match) return fail('NOT_FOUND', 'errors.attachmentNotFound', { name: filename }, { hint: 'hints.attachmentRenamed' });
   return match;
 }
 
-async function downloadAttachment(ctx: SecureContext, attachment: V2Attachment): Promise<string> {
-  if (attachment.fileSize && attachment.fileSize > MAX_SPEC_BYTES) {
-    fail('TOO_LARGE', `"${attachment.title}" is ${(attachment.fileSize / 1_000_000).toFixed(1)} MB; the limit is 4.5 MB.`);
+/** Download the current version, or an older one when `version` is set. */
+export async function downloadAttachment(ctx: SecureContext, attachment: V2Attachment, version?: number): Promise<string> {
+  if (attachment.fileSize && attachment.fileSize > MAX_SOURCE_BYTES) {
+    fail('TOO_LARGE', 'errors.fileTooLarge', { name: attachment.title, size: MAX_SOURCE_BYTES / MB });
   }
-  const contentId = requireContent(ctx);
-  const res = await requester(ctx).requestConfluence(
-    route`/wiki/rest/api/content/${contentId}/child/attachment/${attachment.id}/download`,
-  );
-  if (res.status === 404) fail('NOT_FOUND', `The attachment "${attachment.title}" could not be downloaded.`);
-  if (!res.ok) fail('UPSTREAM_ERROR', `Confluence returned HTTP ${res.status} while downloading "${attachment.title}".`);
+  checkBudget();
+  const id = requireContent(ctx);
+  const path = version
+    ? route`/wiki/rest/api/content/${id}/child/attachment/${attachment.id}/download?version=${version}`
+    : route`/wiki/rest/api/content/${id}/child/attachment/${attachment.id}/download`;
+  const res = await requester(ctx).requestConfluence(path);
+  if (res.status === 404) fail('NOT_FOUND', 'errors.attachmentDownloadFailed', { name: attachment.title });
+  if (!res.ok) fail('UPSTREAM_ERROR', 'errors.confluenceDownloadFailed', { status: res.status, name: attachment.title });
   const text = await res.text();
-  if (text.length > MAX_SPEC_BYTES) fail('TOO_LARGE', `"${attachment.title}" is larger than 4.5 MB.`);
+  if (text.length > MAX_SOURCE_BYTES) fail('TOO_LARGE', 'errors.fileTooLarge', { name: attachment.title, size: MAX_SOURCE_BYTES / MB });
   return text;
 }
 
-export function attachmentSource(ctx: SecureContext, filename: string): SpecSource {
-  if (!filename || !isSpecFilename(filename)) {
-    fail('NOT_CONFIGURED', 'Choose a .yaml, .yml or .json attachment in the macro settings.');
-  }
+export function attachmentSource(ctx: SecureContext, filename: string, options: { version?: number } = {}): SpecSource {
+  if (!filename || !isSpecFilename(filename)) fail('NOT_CONFIGURED', 'errors.attachmentNotChosen');
   return {
-    label: `Attachment: ${filename}`,
+    label: options.version ? `${filename} (v${options.version})` : filename,
     // don't cache: access depends on who is reading
     cacheKey: undefined,
     baseUrl: syntheticUrl('attachments', filename),
     async read(url: string) {
       // Attachments have no folders, so try "schemas/pet.yaml" then "pet.yaml".
       const path = syntheticPath(url);
+      const isRoot = path === filename;
       const candidates = [...new Set([path, path.split('/').pop() ?? path])];
       let lastError: unknown;
       for (const name of candidates) {
         try {
-          return await downloadAttachment(ctx, await findAttachment(ctx, name));
+          // Only the root file is pinned to an old version; referenced files use their current version.
+          return await downloadAttachment(ctx, await findAttachment(ctx, name), isRoot ? options.version : undefined);
         } catch (err) {
           lastError = err;
         }
@@ -90,14 +99,9 @@ export function attachmentSource(ctx: SecureContext, filename: string): SpecSour
 }
 
 export async function listSpecAttachments(ctx: SecureContext): Promise<AttachmentOption[]> {
-  if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'Only licensed Confluence users can edit this macro.');
-  const contentId = requireContent(ctx);
-  const path =
-    contentCollection(ctx) === 'blogposts'
-      ? route`/wiki/api/v2/blogposts/${contentId}/attachments?limit=250`
-      : route`/wiki/api/v2/pages/${contentId}/attachments?limit=250`;
-  const res = await asUser().requestConfluence(path, { headers: { Accept: 'application/json' } });
-  if (!res.ok) fail('UPSTREAM_ERROR', `Confluence returned HTTP ${res.status} while listing attachments.`);
+  if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'errors.editorOnly');
+  const res = await asUser().requestConfluence(attachmentsRoute(ctx, { limit: 250 }), { headers: { Accept: 'application/json' } });
+  if (!res.ok) fail('UPSTREAM_ERROR', 'errors.confluenceListFailed', { status: res.status });
   const body = (await res.json()) as { results?: V2Attachment[] };
   return (body.results ?? [])
     .filter((a) => isSpecFilename(a.title))

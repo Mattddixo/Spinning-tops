@@ -1,5 +1,6 @@
 import { useId, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import type { AppError } from '../../../../src/shared/types';
+import { errorText, useT } from '../i18n';
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   appearance?: 'default' | 'primary' | 'subtle' | 'danger';
@@ -98,19 +99,23 @@ export function Message({
 }
 
 export function ErrorMessage({ error, actions }: { error: AppError; actions?: ReactNode }) {
+  const t = useT();
   const appearance = error.code === 'NOT_CONFIGURED' ? 'info' : error.code === 'EGRESS_NOT_APPROVED' || error.code === 'SOURCE_DISABLED' ? 'warning' : 'error';
+  const { title, hint } = errorText(t, error);
   return (
-    <Message appearance={appearance} title={error.message} actions={actions}>
+    <Message appearance={appearance} title={title} actions={actions}>
+      {hint ? <span>{hint}</span> : null}
       {error.detail ? <span className="sp-muted">{error.detail}</span> : null}
     </Message>
   );
 }
 
-export function Loading({ label = 'Loading…' }: { label?: string }) {
+export function Loading({ label }: { label?: string }) {
+  const t = useT();
   return (
     <div className="sp-loading" role="status" aria-live="polite">
       <span className="sp-spinner" aria-hidden="true" />
-      <span>{label}</span>
+      <span>{label ?? t('ui.common.loading')}</span>
     </div>
   );
 }

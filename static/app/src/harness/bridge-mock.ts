@@ -6,6 +6,8 @@ interface HarnessConfig {
   context?: Record<string, unknown>;
   resolvers?: Record<string, Handler>;
   egress?: Array<{ key: string; description: string; configured: Array<{ domain: string; type: string[] }> }>;
+  /** What i18n.getTranslations() returns; English fallback is used when omitted. */
+  translations?: { locale: string; translations: Record<string, unknown> };
 }
 
 declare global {
@@ -69,6 +71,10 @@ export const view = {
   },
 };
 
+export const i18n = {
+  getTranslations: async () => harness().translations ?? { locale: 'en-US', translations: {} },
+};
+
 export const router = { open: async () => undefined, navigate: async () => undefined };
 
 export const permissions = {
@@ -84,7 +90,10 @@ export const permissions = {
       window.__SPECPAGE_HARNESS__ = { ...harness(), egress: current };
       return { results: current };
     },
-    deleteDomain: async () => undefined,
+    deleteDomain: async ({ key, domain }: { key: string; domain: string }) => {
+      const group = (harness().egress ?? []).find((g) => g.key === key);
+      if (group) group.configured = group.configured.filter((c) => c.domain !== domain);
+    },
     deleteGroup: async () => undefined,
   },
 };

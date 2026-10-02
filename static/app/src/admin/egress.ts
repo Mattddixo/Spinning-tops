@@ -6,22 +6,31 @@ import { EGRESS_GROUPS } from '../../../../src/shared/types';
 // dialog. Forge allows 10 groups per install and 10 domains per group.
 export type EgressGroup = keyof typeof EGRESS_GROUPS;
 
+// `title` is a translation key. `description` is stored by Atlassian and shown in
+// its consent dialog and admin pages, so it stays in English for every admin.
 export const GROUP_INFO: Record<EgressGroup, { title: string; description: string }> = {
   git: {
-    title: 'Git hosts',
+    title: 'ui.admin.groupGit',
     description: 'SpecPage: read OpenAPI files from your Git provider API (added automatically for Git connections).',
   },
   specs: {
-    title: 'Spec hosts',
+    title: 'ui.admin.groupSpecs',
     description: 'SpecPage: load OpenAPI documents from these https:// hosts when URL sources are enabled.',
   },
   apis: {
-    title: 'API hosts for "Try it out"',
+    title: 'ui.admin.groupApis',
     description: 'SpecPage: relay "Try it out" requests from signed-in users to these API hosts.',
   },
 };
 
 export const MAX_DOMAINS_PER_GROUP = 10;
+
+export class HostLimitError extends Error {
+  constructor() {
+    super(`Each list holds up to ${MAX_DOMAINS_PER_GROUP} hosts.`);
+    this.name = 'HostLimitError';
+  }
+}
 
 // @forge/egress pulls in Node-only code, so only import the type.
 const FETCH_BACKEND = 'FETCH_BACKEND_SIDE' as unknown as EgressType;
@@ -49,14 +58,16 @@ export function normaliseHost(input: string): string | undefined {
   }
 }
 
-export async function approveHosts(group: EgressGroup, hosts: string[]): Promise<void> {
+/** Resolves to the hosts that were newly approved (empty if all were already there). */
+export async function approveHosts(group: EgressGroup, hosts: string[]): Promise<string[]> {
   const current = (await getApprovedHosts())[group];
   const all = [...new Set([...current, ...hosts])];
   if (all.length > MAX_DOMAINS_PER_GROUP) {
-    throw new Error(`Each list can hold up to ${MAX_DOMAINS_PER_GROUP} hosts. Remove one first or use a wildcard such as *.example.com.`);
+    throw new HostLimitError();
   }
-  if (all.length === current.length) return;
-  await permissions.egress.set({
+  const added = all.filter((h) => !current.includes(h));
+  if (!added.length) return [];
+  const res = await permissions.egress.set({
     egresses: [
       {
         key: EGRESS_GROUPS[group],
@@ -65,6 +76,10 @@ export async function approveHosts(group: EgressGroup, hosts: string[]): Promise
       },
     ],
   });
+  // Report what Atlassian actually stored, in case the admin declined the
+  // consent dialog for some of it.
+  const stored = res?.results?.find((g) => g.key === EGRESS_GROUPS[group])?.configured.map((c) => c.domain);
+  return stored ? added.filter((h) => stored.includes(h)) : added;
 }
 
 export async function removeHost(group: EgressGroup, domain: string): Promise<void> {

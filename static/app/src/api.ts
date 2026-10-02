@@ -1,5 +1,6 @@
 import { makeInvoke } from '@forge/bridge';
 import type { Defs } from '../../../src/shared/defs';
+import { appError } from '../../../src/shared/messages';
 import type { AppError, Result } from '../../../src/shared/types';
 
 export const invoke = makeInvoke<Defs>();
@@ -21,18 +22,16 @@ export async function call<T>(promise: Promise<Result<T>>): Promise<T> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const rateLimited = /429|rate limit/i.test(message);
-    throw new RequestFailed({
-      code: rateLimited ? 'UPSTREAM_ERROR' : 'INTERNAL',
-      message: rateLimited ? 'Too many requests right now. Please wait a moment and try again.' : 'SpecPage could not reach its backend. Please reload the page.',
-      detail: message,
-    });
+    throw new RequestFailed(
+      rateLimited
+        ? appError('UPSTREAM_ERROR', 'errors.rateLimited', undefined, { detail: message })
+        : appError('INTERNAL', 'errors.backendUnreachable', undefined, { detail: message }),
+    );
   }
-  if (!result || typeof result !== 'object') {
-    throw new RequestFailed({ code: 'INTERNAL', message: 'Unexpected response from the SpecPage backend.' });
-  }
+  if (!result || typeof result !== 'object') throw new RequestFailed(appError('INTERNAL', 'errors.unexpectedResponse'));
   if (!result.ok) throw new RequestFailed(result.error);
   return result.value;
 }
 
 export const toAppError = (err: unknown): AppError =>
-  err instanceof RequestFailed ? err.error : { code: 'INTERNAL', message: err instanceof Error ? err.message : String(err) };
+  err instanceof RequestFailed ? err.error : appError('INTERNAL', 'errors.generic', undefined, { detail: err instanceof Error ? err.message : String(err) });

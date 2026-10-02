@@ -1,18 +1,22 @@
 import type { MacroConfig, ProxyRequest, ProxyResponse } from '../shared/types';
 import { isLicensedUser, requireLicense, type SecureContext } from './context';
 import { fail } from './errors';
-import { externalFetch } from './http';
+import { externalFetchAny } from './http';
 import { parseHttpsUrl } from './sources/url';
 import { getSettings } from './store';
 
-/** Front-end invocation request payloads are capped at 500 KB by Forge. */
-const MAX_REQUEST_BODY = 400_000;
-const MAX_RESPONSE_BODY = 4_000_000;
+// Front-end invocation requests are capped at 500 KB by Forge. Base64 adds a
+// third, so binary bodies get a smaller limit than text.
+const MAX_TEXT_BODY = 400_000;
+const MAX_BINARY_BODY = 350_000;
+const MAX_TEXT_RESPONSE = 4_000_000;
+// Responses are capped at 5 MB; base64 of 3 MB is 4 MB.
+const MAX_BINARY_RESPONSE = 3_000_000;
 const PROXY_TIMEOUT_MS = 20_000;
 
 const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
 
-/** Headers that must never be forwarded (hop-by-hop, ambient credentials or set by the runtime). */
+// hop-by-hop, ambient credentials, or set by the runtime
 const BLOCKED_REQUEST_HEADERS = new Set([
   'host',
   'cookie',
@@ -31,18 +35,26 @@ const BLOCKED_REQUEST_HEADERS = new Set([
 
 const BLOCKED_RESPONSE_HEADERS = new Set(['set-cookie', 'set-cookie2']);
 
+function decodeBinaryBody(b64: string): ArrayBuffer {
+  // Rough size check before decoding so a huge string can't eat memory.
+  if (b64.length > Math.ceil((MAX_BINARY_BODY * 4) / 3) + 4) fail('TOO_LARGE', 'errors.requestTooLarge', { size: MAX_BINARY_BODY / 1000 });
+  const bytes = Buffer.from(b64, 'base64');
+  if (bytes.length > MAX_BINARY_BODY) fail('TOO_LARGE', 'errors.requestTooLarge', { size: MAX_BINARY_BODY / 1000 });
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
 // Try it out proxy. Calls from the iframe would hit CORS, so we send them from
 // the backend. Needs: site setting on, macro setting on, licensed user, and the
 // host approved by an admin.
 export async function proxyRequest(ctx: SecureContext, config: MacroConfig, request: ProxyRequest): Promise<ProxyResponse> {
   requireLicense(ctx);
   const settings = await getSettings();
-  if (!settings.tryItOutEnabled) fail('SOURCE_DISABLED', '"Try it out" is turned off for this site.', 'A Confluence admin can enable it in SpecPage settings.');
-  if (config.tryItOut !== true) fail('SOURCE_DISABLED', '"Try it out" is turned off for this macro.');
-  if (!isLicensedUser(ctx)) fail('FORBIDDEN', '"Try it out" is available to signed-in Confluence users only.');
+  if (!settings.tryItOutEnabled) fail('SOURCE_DISABLED', 'errors.tryItOutSiteOff', undefined, { hint: 'hints.askAdminEnableTryItOut' });
+  if (config.tryItOut !== true) fail('SOURCE_DISABLED', 'errors.tryItOutMacroOff');
+  if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'errors.tryItOutLicensedOnly');
 
   const method = String(request?.method ?? '').toUpperCase();
-  if (!METHODS.has(method)) fail('BAD_REQUEST', `HTTP method ${method || '(none)'} is not supported.`);
+  if (!METHODS.has(method)) fail('BAD_REQUEST', 'errors.methodUnsupported', { method: method || '(none)' });
   const url = parseHttpsUrl(request?.url);
 
   const headers: Record<string, string> = {};
@@ -52,23 +64,32 @@ export async function proxyRequest(ctx: SecureContext, config: MacroConfig, requ
     headers[name] = value.replace(/[\r\n]+/g, ' ');
   }
 
-  const body = typeof request?.body === 'string' ? request.body : undefined;
-  if (body && body.length > MAX_REQUEST_BODY) fail('TOO_LARGE', 'Request bodies are limited to 400 KB.');
+  let body: string | ArrayBuffer | undefined;
+  if (typeof request?.bodyBase64 === 'string') {
+    body = decodeBinaryBody(request.bodyBase64);
+  } else if (typeof request?.body === 'string') {
+    if (request.body.length > MAX_TEXT_BODY) fail('TOO_LARGE', 'errors.requestTooLarge', { size: MAX_TEXT_BODY / 1000 });
+    body = request.body;
+  }
   const canHaveBody = method !== 'GET' && method !== 'HEAD';
 
-  const res = await externalFetch(url.toString(), {
+  const res = await externalFetchAny(url.toString(), {
     method,
     headers,
     body: canHaveBody ? body : undefined,
     // don't follow redirects to other hosts
     redirect: 'manual',
     timeoutMs: PROXY_TIMEOUT_MS,
-    maxBytes: MAX_RESPONSE_BODY,
+    maxBytes: MAX_TEXT_RESPONSE,
+    maxBinaryBytes: MAX_BINARY_RESPONSE,
   });
 
   const responseHeaders: Record<string, string> = {};
   for (const [key, value] of Object.entries(res.headers)) {
     if (!BLOCKED_RESPONSE_HEADERS.has(key)) responseHeaders[key] = value;
   }
-  return { status: res.status, statusText: res.statusText, headers: responseHeaders, body: res.text, truncated: res.truncated };
+  const out: ProxyResponse = { status: res.status, statusText: res.statusText, headers: responseHeaders, truncated: res.truncated };
+  if (res.base64 !== undefined) out.bodyBase64 = res.base64;
+  else out.body = res.text ?? '';
+  return out;
 }

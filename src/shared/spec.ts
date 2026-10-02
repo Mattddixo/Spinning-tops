@@ -1,4 +1,5 @@
 import { parse as parseYaml, YAMLParseError } from 'yaml';
+import { appError } from './messages';
 import type { OperationSummary, Result, SpecKind, SpecSummary } from './types';
 
 const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
@@ -12,7 +13,7 @@ const isObject = (value: unknown): value is JsonObject =>
 export function parseSpecText(text: string): Result<JsonObject> {
   const trimmed = text.replace(/^\uFEFF/, '').trim();
   if (!trimmed) {
-    return { ok: false, error: { code: 'INVALID_SPEC', message: 'The spec file is empty.' } };
+    return { ok: false, error: appError('INVALID_SPEC', 'errors.specEmpty') };
   }
 
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
@@ -20,15 +21,11 @@ export function parseSpecText(text: string): Result<JsonObject> {
       const value: unknown = JSON.parse(trimmed);
       return isObject(value)
         ? { ok: true, value }
-        : { ok: false, error: { code: 'INVALID_SPEC', message: 'The spec must be a JSON object.' } };
+        : { ok: false, error: appError('INVALID_SPEC', 'errors.specNotJsonObject') };
     } catch (err) {
       return {
         ok: false,
-        error: {
-          code: 'INVALID_SPEC',
-          message: 'The spec is not valid JSON.',
-          detail: err instanceof Error ? err.message : String(err),
-        },
+        error: appError('INVALID_SPEC', 'errors.specInvalidJson', undefined, { detail: err instanceof Error ? err.message : String(err) }),
       };
     }
   }
@@ -37,14 +34,14 @@ export function parseSpecText(text: string): Result<JsonObject> {
     const value: unknown = parseYaml(trimmed, { maxAliasCount: 100, prettyErrors: true });
     return isObject(value)
       ? { ok: true, value }
-      : { ok: false, error: { code: 'INVALID_SPEC', message: 'The spec must be a YAML mapping (object).' } };
+      : { ok: false, error: appError('INVALID_SPEC', 'errors.specNotYamlMap') };
   } catch (err) {
     let detail = err instanceof Error ? err.message : String(err);
     if (err instanceof YAMLParseError && err.linePos?.[0]) {
       const { line, col } = err.linePos[0];
       detail = `Line ${line}, column ${col}: ${err.message.split('\n')[0]}`;
     }
-    return { ok: false, error: { code: 'INVALID_SPEC', message: 'The spec is not valid YAML.', detail } };
+    return { ok: false, error: appError('INVALID_SPEC', 'errors.specInvalidYaml', undefined, { detail }) };
   }
 }
 
@@ -63,31 +60,20 @@ export function detectKind(spec: JsonObject): SpecKind | undefined {
 
 export function validateSpecShape(spec: JsonObject): Result<SpecKind> {
   if (typeof spec.asyncapi === 'string') {
-    return {
-      ok: false,
-      error: {
-        code: 'UNSUPPORTED_SPEC',
-        message: 'AsyncAPI documents are not supported. SpecPage renders OpenAPI 3.x and Swagger 2.0.',
-      },
-    };
+    return { ok: false, error: appError('UNSUPPORTED_SPEC', 'errors.specAsyncApi') };
   }
   const kind = detectKind(spec);
   if (!kind) {
     const found = typeof spec.openapi === 'string' ? `openapi: ${spec.openapi}` : undefined;
     return {
       ok: false,
-      error: {
-        code: 'UNSUPPORTED_SPEC',
-        message: 'This file is not an OpenAPI 3.0/3.1/3.2 or Swagger 2.0 document.',
+      error: appError('UNSUPPORTED_SPEC', 'errors.specUnsupported', undefined, {
         detail: found ?? 'Expected a top-level "openapi" or "swagger: \'2.0\'" field.',
-      },
+      }),
     };
   }
   if (!isObject(spec.info)) {
-    return {
-      ok: false,
-      error: { code: 'INVALID_SPEC', message: 'The spec is missing its required "info" object.' },
-    };
+    return { ok: false, error: appError('INVALID_SPEC', 'errors.specMissingInfo') };
   }
   return { ok: true, value: kind };
 }
@@ -213,4 +199,145 @@ export function buildSearchText(summary: SpecSummary, maxLength = 3000): string 
   let text = parts.filter(Boolean).join(' · ').replace(/\s+/g, ' ').trim();
   if (text.length > maxLength) text = `${text.slice(0, maxLength - 1)}…`;
   return text;
+}
+
+// ---------- Servers ----------
+
+// Server URLs may contain {variables}, so these helpers work on strings and
+// never run them through URL() (which would percent-encode the braces).
+export const isAbsoluteServerUrl = (url: string) => url.includes('://');
+
+function resolveAgainst(url: string, base: URL): string {
+  if (url.startsWith('//')) return `${base.protocol}${url}`;
+  if (url.startsWith('/')) return `${base.origin}${url}`;
+  const dir = base.pathname.replace(/[^/]*$/, '');
+  const joined = `${dir}${url.replace(/^\.\//, '')}`;
+  return `${base.origin}${joined}`;
+}
+
+export interface ServerResolution {
+  spec: JsonObject;
+  /** True when every server Swagger UI could pick is absolute. */
+  resolvable: boolean;
+  /** Set when relative servers were rewritten against the spec's own URL. */
+  resolvedAgainst?: string;
+}
+
+/**
+ * OpenAPI says relative server URLs (and a missing `servers`, which means "/")
+ * are relative to where the document is served. Swagger 2.0 says a missing
+ * host means "the host serving the documentation". Inside Confluence that
+ * location is meaningless unless the spec came from a URL, so resolve against
+ * the spec URL when we have one and otherwise report that Try it out needs a
+ * server override.
+ */
+export function resolveServers(spec: JsonObject, kind: SpecKind, specUrl?: string): ServerResolution {
+  let base: URL | undefined;
+  try {
+    base = specUrl ? new URL(specUrl) : undefined;
+  } catch {
+    base = undefined;
+  }
+
+  if (kind === 'swagger-2.0') {
+    if (typeof spec.host === 'string' && spec.host) return { spec, resolvable: true };
+    if (!base) return { spec, resolvable: false };
+    const next: JsonObject = { ...spec, host: base.host };
+    if (!Array.isArray(spec.schemes) || !spec.schemes.length) next.schemes = [base.protocol.replace(':', '')];
+    if (typeof spec.basePath !== 'string') next.basePath = '/';
+    return { spec: next, resolvable: true, resolvedAgainst: base.origin };
+  }
+
+  let changed = false;
+  let resolvable = true;
+  const fix = (servers: unknown): unknown => {
+    if (!Array.isArray(servers)) return servers;
+    return servers.map((server) => {
+      if (!isObject(server) || typeof server.url !== 'string' || isAbsoluteServerUrl(server.url)) return server;
+      if (!base) {
+        resolvable = false;
+        return server;
+      }
+      changed = true;
+      return { ...server, url: resolveAgainst(server.url, base) };
+    });
+  };
+
+  const next: JsonObject = { ...spec };
+  if (!Array.isArray(spec.servers) || spec.servers.length === 0) {
+    if (base) {
+      next.servers = [{ url: base.origin }];
+      changed = true;
+    } else {
+      resolvable = false;
+    }
+  } else {
+    next.servers = fix(spec.servers);
+  }
+
+  if (isObject(spec.paths)) {
+    const paths: JsonObject = {};
+    for (const [path, item] of Object.entries(spec.paths)) {
+      if (!isObject(item)) {
+        paths[path] = item;
+        continue;
+      }
+      const nextItem: JsonObject = { ...item };
+      if (item.servers) nextItem.servers = fix(item.servers);
+      for (const method of HTTP_METHODS) {
+        const op = item[method];
+        if (isObject(op) && op.servers) nextItem[method] = { ...op, servers: fix(op.servers) };
+      }
+      paths[path] = nextItem;
+    }
+    next.paths = paths;
+  }
+
+  if (!changed) return { spec, resolvable };
+  return { spec: next, resolvable, resolvedAgainst: base?.origin };
+}
+
+/** Point every operation at one server, e.g. a staging URL chosen in the macro settings. */
+export function applyServerOverride<T extends JsonObject>(spec: T, kind: SpecKind, serverUrl: string | undefined): T {
+  const url = serverUrl?.trim();
+  if (!url) return spec;
+
+  if (kind === 'swagger-2.0') {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return spec;
+    }
+    return {
+      ...spec,
+      host: parsed.host,
+      basePath: parsed.pathname.replace(/\/+$/, '') || '/',
+      schemes: [parsed.protocol.replace(':', '')],
+    };
+  }
+
+  const next: JsonObject = { ...spec, servers: [{ url }] };
+  if (isObject(spec.paths)) {
+    const paths: JsonObject = {};
+    for (const [path, item] of Object.entries(spec.paths)) {
+      if (!isObject(item)) {
+        paths[path] = item;
+        continue;
+      }
+      const nextItem: JsonObject = { ...item };
+      delete nextItem.servers;
+      for (const method of HTTP_METHODS) {
+        const op = item[method];
+        if (isObject(op) && op.servers) {
+          const copy = { ...op };
+          delete copy.servers;
+          nextItem[method] = copy;
+        }
+      }
+      paths[path] = nextItem;
+    }
+    next.paths = paths;
+  }
+  return next as T;
 }

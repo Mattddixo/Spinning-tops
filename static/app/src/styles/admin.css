@@ -52,3 +52,12 @@ textarea.sp-input.sp-input-short {
 .sp-test {
   margin-top: var(--sp-space-100);
 }
+
+.sp-table-scroll {
+  max-height: 420px;
+  overflow: auto;
+}
+
+.sp-nowrap {
+  white-space: nowrap;
+}

@@ -1,5 +1,6 @@
 import type {
   AppSettings,
+  AuditEntryView,
   AttachmentOption,
   ConnectionOption,
   GitConnection,
@@ -34,4 +35,7 @@ export type Defs = {
     ref?: string;
   }) => Result<{ title: string; version: string; operationCount: number; fileCount: number }>;
   adminClearCache: () => Result<{ cleared: boolean }>;
+  adminGetAudit: () => Result<AuditEntryView[]>;
+  /** Host approvals happen in the browser (Atlassian's consent dialog), so the UI reports them for the log. */
+  adminRecordHostChange: (args: { action: 'host.approve' | 'host.remove'; host: string; group: string }) => Result<{ recorded: boolean }>;
 };

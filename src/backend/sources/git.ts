@@ -14,7 +14,8 @@ import type { GitConnection } from '../../shared/types';
 import type { SecureContext } from '../context';
 import { fail } from '../errors';
 import { externalFetch, upstreamError } from '../http';
-import { getConnection, getToken } from '../store';
+import { MAX_SOURCE_BYTES, MB } from '../limits';
+import { getConnection, getRepoGeneration, getToken } from '../store';
 import { syntheticPath, syntheticUrl, type SpecSource } from './types';
 
 export interface GitTarget {
@@ -41,24 +42,24 @@ function authHeaders(connection: GitConnection, token: string | undefined): Reco
 /** Validate a page editor's Git selection against the admin's connection rules. */
 export async function resolveGitTarget(ctx: SecureContext, target: GitTarget, options: { skipSpaceCheck?: boolean } = {}) {
   if (!target.connectionId || !target.repo || !target.path) {
-    fail('NOT_CONFIGURED', 'Choose a Git connection, repository and file in the macro settings.');
+    fail('NOT_CONFIGURED', 'errors.gitNotConfigured');
   }
   const connection = await getConnection(target.connectionId as string);
   if (!connection) {
-    return fail('NOT_FOUND', 'The Git connection used by this macro no longer exists.', 'Ask a Confluence admin to restore it, or edit the macro.');
+    return fail('NOT_FOUND', 'errors.gitConnectionMissing', undefined, { hint: 'hints.restoreConnection' });
   }
   if (!options.skipSpaceCheck && connection.spaceKeys.length && (!ctx.spaceKey || !connection.spaceKeys.includes(ctx.spaceKey))) {
-    fail('FORBIDDEN', `The Git connection "${connection.name}" is not enabled for this space.`);
+    fail('FORBIDDEN', 'errors.gitConnectionSpace', { name: connection.name });
   }
   const repo = (target.repo as string).trim().replace(/^\/+|\/+$/g, '');
-  if (!isValidRepo(connection.provider, repo)) fail('BAD_REQUEST', `"${repo}" is not a valid repository name.`);
+  if (!isValidRepo(connection.provider, repo)) fail('BAD_REQUEST', 'errors.gitRepoInvalid', { repo });
   if (!repoAllowed(repo, connection.repos)) {
-    fail('FORBIDDEN', `The repository "${repo}" is not allowed for the connection "${connection.name}".`, 'A Confluence admin can add it in SpecPage settings.');
+    fail('FORBIDDEN', 'errors.gitRepoNotAllowed', { repo, name: connection.name }, { hint: 'hints.askAdminAddRepo' });
   }
   const path = normaliseRepoPath(target.path as string);
-  if (!path) fail('BAD_REQUEST', 'The file path must point to a .yaml, .yml or .json file inside the repository.');
+  if (!path) fail('BAD_REQUEST', 'errors.gitPathInvalid');
   const ref = (target.ref ?? '').trim() || connection.defaultRef?.trim() || '';
-  if (ref && !isValidRef(ref)) fail('BAD_REQUEST', `"${ref}" is not a valid branch, tag or commit.`);
+  if (ref && !isValidRef(ref)) fail('BAD_REQUEST', 'errors.gitRefInvalid', { ref });
   return { connection, repo, path: path as string, ref };
 }
 
@@ -67,9 +68,9 @@ async function resolveBitbucketCommit(connection: GitConnection, headers: Record
   let name = ref;
   if (!name) {
     const res = await externalFetch(bitbucketRepoUrl(connection.apiBaseUrl, repo), { headers });
-    if (res.status !== 200) upstreamError(`repository ${repo}`, res.status, res.statusText);
+    if (res.status !== 200) upstreamError(repo, res.status, res.statusText);
     name = (JSON.parse(res.text) as { mainbranch?: { name?: string } }).mainbranch?.name ?? '';
-    if (!name) fail('NOT_FOUND', `Could not determine the main branch of ${repo}.`);
+    if (!name) fail('NOT_FOUND', 'errors.gitMainBranchUnknown', { repo });
   }
   for (const kind of ['branches', 'tags'] as const) {
     const res = await externalFetch(bitbucketRefUrl(connection.apiBaseUrl, repo, kind, name), { headers });
@@ -77,10 +78,10 @@ async function resolveBitbucketCommit(connection: GitConnection, headers: Record
       const hash = (JSON.parse(res.text) as { target?: { hash?: string } }).target?.hash;
       if (hash) return hash;
     } else if (res.status !== 404) {
-      upstreamError(`ref ${name}`, res.status, res.statusText);
+      upstreamError(`${repo}@${name}`, res.status, res.statusText);
     }
   }
-  return fail('NOT_FOUND', `No branch or tag named "${name}" exists in ${repo}.`);
+  return fail('NOT_FOUND', 'errors.gitRefNotFound', { ref: name, repo });
 }
 
 export async function gitSource(
@@ -91,7 +92,7 @@ export async function gitSource(
   const { connection, repo, path, ref } = await resolveGitTarget(ctx, target, options);
   const token = await getToken(connection.id);
   if (!token && connection.authType !== 'none') {
-    fail('FORBIDDEN', `The Git connection "${connection.name}" has no access token.`, 'A Confluence admin can add one in SpecPage settings.');
+    fail('FORBIDDEN', 'errors.gitNoToken', { name: connection.name }, { hint: 'hints.askAdminAddToken' });
   }
   const headers = authHeaders(connection, token);
   let bitbucketCommit: string | undefined;
@@ -115,18 +116,19 @@ export async function gitSource(
     }
     const res = await externalFetch(url, { headers: { ...headers, ...extra } });
     if (res.status !== 200) upstreamError(what, res.status, res.statusText);
-    if (res.truncated) fail('TOO_LARGE', `${what} is larger than 4.5 MB.`);
+    if (res.truncated) fail('TOO_LARGE', 'errors.fileTooLarge', { name: what, size: MAX_SOURCE_BYTES / MB });
     return res.text;
   }
 
   return {
     label: `${repo}${ref ? `@${ref}` : ''}: ${path}`,
     link: webFileUrl(connection.provider, connection.webBaseUrl, repo, path, ref || undefined),
-    cacheKey: JSON.stringify(['git', connection.id, connection.updatedAt, repo, ref, path]),
+    // The repo generation is bumped by Git webhooks, which invalidates cached copies immediately.
+    cacheKey: JSON.stringify(['git', connection.id, connection.updatedAt, await getRepoGeneration(connection.id, repo), repo, ref, path]),
     baseUrl: syntheticUrl('repo', path),
     async read(url: string) {
       const filePath = normaliseRepoPath(syntheticPath(url));
-      if (!filePath) fail('BAD_REQUEST', `The reference "${syntheticPath(url)}" must point to a .yaml, .yml or .json file in the same repository.`);
+      if (!filePath) fail('BAD_REQUEST', 'errors.gitRefOutsideRepo', { ref: syntheticPath(url) });
       return readFile(filePath as string);
     },
   };

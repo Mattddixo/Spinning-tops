@@ -1,20 +1,21 @@
 import { $RefParser, type FileInfo } from '@apidevtools/json-schema-ref-parser';
 import { parse as parseYaml } from 'yaml';
 import { parseSpecText, summarizeSpec, validateSpecShape } from '../shared/spec';
-import type { SpecSummary } from '../shared/types';
-import { AppFailure, fail } from './errors';
-import { MAX_SPEC_BYTES } from './http';
+import { notice } from '../shared/messages';
+import type { Notice, SpecSummary } from '../shared/types';
+import { remainingMs } from './budget';
+import { AppFailure, fail, failWith } from './errors';
+import { MAX_FILES, MAX_SOURCE_BYTES, MB } from './limits';
 import { isSyntheticUrl, type SpecSource } from './sources/types';
 import { readUrl } from './sources/url';
 
-export const MAX_FILES = 50;
-const BUNDLE_TIMEOUT_MS = 12_000;
+const BUNDLE_TIMEOUT_MS = 20_000;
 
 export interface BundledSpec {
   spec: Record<string, unknown>;
   summary: SpecSummary;
   fileCount: number;
-  warnings: string[];
+  warnings: Notice[];
 }
 
 export interface BundleOptions {
@@ -29,27 +30,28 @@ export interface BundleOptions {
 export async function loadAndBundle(source: SpecSource, options: BundleOptions): Promise<BundledSpec> {
   let totalBytes = 0;
   const seen = new Set<string>();
-  const warnings: string[] = [];
+  const warnings: Notice[] = [];
 
   const track = (url: string, text: string) => {
     seen.add(url);
     totalBytes += text.length;
-    if (seen.size > MAX_FILES) fail('TOO_LARGE', `The spec references more than ${MAX_FILES} files.`);
-    if (totalBytes > MAX_SPEC_BYTES) fail('TOO_LARGE', 'The spec and its referenced files are larger than 4.5 MB in total.');
+    if (seen.size > MAX_FILES) fail('TOO_LARGE', 'errors.tooManyFiles', { max: MAX_FILES });
+    if (totalBytes > MAX_SOURCE_BYTES) fail('TOO_LARGE', 'errors.totalTooLarge', { size: MAX_SOURCE_BYTES / MB });
   };
 
   const rootText = options.rootText ?? (await source.read(source.baseUrl));
   track(source.baseUrl, rootText);
 
   const parsed = parseSpecText(rootText);
-  if (!parsed.ok) throw new AppFailure(parsed.error.code, parsed.error.message, parsed.error.detail);
+  if (!parsed.ok) return failWith(parsed.error);
   const shape = validateSpecShape(parsed.value);
-  if (!shape.ok) throw new AppFailure(shape.error.code, shape.error.message, shape.error.detail);
+  if (!shape.ok) return failWith(shape.error);
 
   let bundled: Record<string, unknown>;
   try {
     bundled = (await $RefParser.bundle(source.baseUrl, parsed.value, {
-      timeoutMs: BUNDLE_TIMEOUT_MS,
+      // Never outlive the invocation budget; source reads also check it.
+      timeoutMs: Math.max(1000, Math.min(BUNDLE_TIMEOUT_MS, remainingMs() - 500)),
       mutateInputSchema: true,
       parse: {
         json: false,
@@ -80,11 +82,11 @@ export async function loadAndBundle(source: SpecSource, options: BundleOptions):
               text = await source.read(url);
             } else if (/^https:\/\//i.test(url)) {
               if (!options.allowExternalUrls) {
-                fail('SOURCE_DISABLED', `The spec references ${url}, but loading from URLs is turned off.`, 'A Confluence admin can enable URL sources in SpecPage settings.');
+                fail('SOURCE_DISABLED', 'errors.refUrlsDisabled', { url }, { hint: 'hints.askAdminEnableUrls' });
               }
               text = await readUrl(url);
             } else {
-              return fail('BAD_REQUEST', `Unsupported reference "${file.reference ?? url}". Use relative paths or https:// URLs.`);
+              return fail('BAD_REQUEST', 'errors.refUnsupported', { ref: file.reference ?? url });
             }
             track(url, text);
             return text;
@@ -97,12 +99,11 @@ export async function loadAndBundle(source: SpecSource, options: BundleOptions):
     const nested = findNestedFailure(err);
     if (nested) throw nested;
     const message = err instanceof Error ? err.message : String(err);
-    return fail('INVALID_SPEC', 'A $ref in the spec could not be resolved.', message.slice(0, 500));
+    if (/timeout|timed out/i.test(message)) return fail('UPSTREAM_ERROR', 'errors.deadline', { seconds: 22 });
+    return fail('INVALID_SPEC', 'errors.refUnresolved', undefined, { detail: message.slice(0, 500) });
   }
 
-  if (seen.size > 1) warnings.push(`Merged ${seen.size} files referenced with $ref.`);
-  const size = JSON.stringify(bundled).length;
-  if (size > MAX_SPEC_BYTES) fail('TOO_LARGE', 'The bundled spec is larger than 4.5 MB.');
+  if (seen.size > 1) warnings.push(notice('warnings.mergedFiles', { count: seen.size }));
 
   return { spec: bundled, summary: summarizeSpec(bundled, shape.value), fileCount: seen.size, warnings };
 }

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { kvs } from '@forge/kvs';
-import type { SpecSummary } from '../shared/types';
+import type { Notice, SpecSummary } from '../shared/types';
 import { getCacheGeneration } from './store';
 
 // Cache for Git/URL specs. KVS values max out at 240 KiB so big specs get
@@ -8,10 +8,11 @@ import { getCacheGeneration } from './store';
 const CHUNK_SIZE = 200_000;
 
 export interface CachedSpec {
-  spec: Record<string, unknown>;
+  specGz: string;
   summary: SpecSummary;
   fileCount: number;
-  warnings: string[];
+  warnings: Notice[];
+  serversResolvable: boolean;
   fetchedAt: string;
 }
 

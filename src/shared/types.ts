@@ -36,6 +36,8 @@ export interface MacroConfig {
   tryItOut?: boolean;
   /** Maximum height in pixels; 0 means grow with content. */
   maxHeight?: number;
+  /** Replaces the spec's servers, e.g. to point "Try it out" at staging. */
+  serverUrl?: string;
 
   /** Plain-text summary indexed by Confluence search (typed `string` parameter with indexing). */
   searchText?: string;
@@ -70,7 +72,9 @@ export interface LoadedSpecMeta {
   fromCache: boolean;
   /** Number of files merged when resolving relative `$ref`s. */
   fileCount: number;
-  warnings: string[];
+  warnings: Notice[];
+  /** False when servers are relative and couldn't be resolved, so Try it out needs a server override. */
+  serversResolvable: boolean;
 }
 
 export type ErrorCode =
@@ -87,17 +91,34 @@ export type ErrorCode =
   | 'BAD_REQUEST'
   | 'INTERNAL';
 
+export type MessageParams = Record<string, string | number>;
+
 export interface AppError {
   code: ErrorCode;
+  /** English text, used when no translation is available. */
   message: string;
-  /** Extra detail such as a YAML line/column or the upstream HTTP status. */
+  /** Catalog key for `message`, e.g. "errors.gitRefNotFound". */
+  key?: string;
+  params?: MessageParams;
+  /** What the user can do about it (catalog key + English fallback). */
+  hintKey?: string;
+  hintParams?: MessageParams;
+  hint?: string;
+  /** Technical detail (parser output, upstream text). Not translated. */
   detail?: string;
+}
+
+export interface Notice {
+  key: string;
+  params?: MessageParams;
+  message: string;
 }
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: AppError };
 
 export interface LoadSpecResponse {
-  spec: Record<string, unknown>;
+  /** The bundled spec as gzip-compressed JSON, base64 encoded (keeps big specs under Forge's 5 MB response cap). */
+  specGz: string;
   summary: SpecSummary;
   meta: LoadedSpecMeta;
   tryItOutAllowed: boolean;
@@ -172,16 +193,44 @@ export interface ProxyRequest {
   url: string;
   method: string;
   headers: Record<string, string>;
-  /** Text body. Binary uploads are not supported by the proxy. */
+  /** Text body. */
   body?: string;
+  /** Binary body (file uploads, multipart), base64 encoded. Wins over `body`. */
+  bodyBase64?: string;
 }
 
 export interface ProxyResponse {
   status: number;
   statusText: string;
   headers: Record<string, string>;
-  body: string;
+  /** Text responses. */
+  body?: string;
+  /** Binary responses (images, PDFs, archives), base64 encoded. */
+  bodyBase64?: string;
   truncated: boolean;
+}
+
+export type AuditAction =
+  | 'settings.update'
+  | 'connection.create'
+  | 'connection.update'
+  | 'connection.delete'
+  | 'cache.clear'
+  | 'host.approve'
+  | 'host.remove';
+
+export interface AuditEntry {
+  at: string;
+  accountId: string;
+  action: AuditAction;
+  /** Connection name, host, etc. */
+  target?: string;
+  /** Short machine-readable list of what changed, e.g. ["repos", "token"]. */
+  changes?: string[];
+}
+
+export interface AuditEntryView extends AuditEntry {
+  displayName?: string;
 }
 
 export interface AttachmentOption {

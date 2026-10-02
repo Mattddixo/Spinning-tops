@@ -1,49 +1,59 @@
+import { notice } from '../shared/messages';
+import { resolveServers, summarizeSpec } from '../shared/spec';
 import type { AppSettings, LoadSpecResponse, MacroConfig } from '../shared/types';
 import { loadAndBundle } from './bundle';
-import { readCache, writeCache } from './cache';
+import { readCache, writeCache, type CachedSpec } from './cache';
 import { isLicensedUser, requireLicense, type SecureContext } from './context';
+import { encodeSpec } from './encoding';
 import { fail } from './errors';
-import { getSettings } from './store';
+import { MAX_INLINE_CHARS } from './limits';
 import { attachmentSource } from './sources/attachment';
 import { gitSource } from './sources/git';
-import { syntheticUrl, type SpecSource } from './sources/types';
+import { isSyntheticUrl, syntheticUrl, type SpecSource } from './sources/types';
 import { urlSource } from './sources/url';
+import { getSettings } from './store';
 
-/** Inline specs are stored in the page's macro parameters, so keep them modest. */
-export const MAX_INLINE_CHARS = 100_000;
+export { MAX_INLINE_CHARS };
 
 function inlineSource(text: string | undefined): { source: SpecSource; rootText: string } {
   const rootText = (text ?? '').trim();
-  if (!rootText) fail('NOT_CONFIGURED', 'Paste an OpenAPI or Swagger document in the macro settings.');
+  if (!rootText) fail('NOT_CONFIGURED', 'errors.inlineEmpty');
   if (rootText.length > MAX_INLINE_CHARS) {
-    fail('TOO_LARGE', 'Pasted specs are limited to 100,000 characters.', 'Attach the file to the page or load it from Git instead.');
+    fail('TOO_LARGE', 'errors.inlineTooLarge', { max: MAX_INLINE_CHARS.toLocaleString('en-US') }, { hint: 'hints.useAttachmentOrGit' });
   }
-  const baseUrl = syntheticUrl('inline', 'spec.yaml');
   return {
     rootText,
     source: {
       label: 'Pasted spec',
       cacheKey: undefined,
-      baseUrl,
-      read: async () => fail('BAD_REQUEST', 'Pasted specs can only reference https:// URLs, not relative files.'),
+      baseUrl: syntheticUrl('inline', 'spec.yaml'),
+      read: async () => fail('BAD_REQUEST', 'errors.inlineNoRelativeRefs'),
     },
   };
+}
+
+export interface SourceOverrides {
+  /** Load a different Git ref than the one saved on the macro (used for comparisons). */
+  gitRef?: string;
+  /** Load an older attachment version (used for comparisons). */
+  attachmentVersion?: number;
 }
 
 export async function selectSource(
   ctx: SecureContext,
   config: MacroConfig,
   settings: AppSettings,
+  overrides: SourceOverrides = {},
 ): Promise<{ source: SpecSource; rootText?: string }> {
   switch (config.sourceType) {
     case 'attachment':
-      return { source: attachmentSource(ctx, config.attachment ?? '') };
+      return { source: attachmentSource(ctx, config.attachment ?? '', { version: overrides.attachmentVersion }) };
     case 'git':
       return {
         source: await gitSource(ctx, {
           connectionId: config.gitConnectionId,
           repo: config.gitRepo,
-          ref: config.gitRef,
+          ref: overrides.gitRef ?? config.gitRef,
           path: config.gitPath,
         }),
       };
@@ -52,8 +62,28 @@ export async function selectSource(
     case 'inline':
       return inlineSource(config.inlineSpec);
     default:
-      return fail('NOT_CONFIGURED', 'This macro has not been set up yet. Edit the macro to choose an API spec.');
+      return fail('NOT_CONFIGURED', 'errors.notConfigured', undefined, { hint: 'hints.editToConfigure' });
   }
+}
+
+/** Fetch, bundle and post-process a spec without touching the cache. */
+export async function buildSpec(source: SpecSource, settings: AppSettings, rootText?: string): Promise<CachedSpec & { spec: Record<string, unknown> }> {
+  const bundled = await loadAndBundle(source, { allowExternalUrls: settings.urlSourcesEnabled, rootText });
+  const warnings = [...bundled.warnings];
+  // Only URL sources have a real location to resolve relative servers against.
+  const specUrl = isSyntheticUrl(source.baseUrl) ? undefined : source.baseUrl;
+  const servers = resolveServers(bundled.spec, bundled.summary.kind, specUrl);
+  if (servers.resolvedAgainst) warnings.push(notice('warnings.serversResolved', { base: servers.resolvedAgainst }));
+  const spec = servers.spec;
+  return {
+    spec,
+    specGz: encodeSpec(spec),
+    summary: servers.spec === bundled.spec ? bundled.summary : summarizeSpec(spec, bundled.summary.kind),
+    fileCount: bundled.fileCount,
+    warnings,
+    serversResolvable: servers.resolvable,
+    fetchedAt: new Date().toISOString(),
+  };
 }
 
 export async function loadSpec(
@@ -68,41 +98,40 @@ export async function loadSpec(
   const refresh = options.refresh === true && isLicensedUser(ctx);
   const tryItOutAllowed = settings.tryItOutEnabled && config.tryItOut === true && isLicensedUser(ctx);
 
+  let result: CachedSpec | undefined;
+  let fromCache = false;
   if (source.cacheKey && !refresh) {
-    const cached = await readCache(source.cacheKey, settings.cacheTtlMinutes);
-    if (cached) {
-      return {
-        spec: cached.spec,
-        summary: cached.summary,
-        tryItOutAllowed,
-        meta: {
-          sourceLabel: source.label,
-          sourceLink: source.link,
-          fetchedAt: cached.fetchedAt,
-          fromCache: true,
-          fileCount: cached.fileCount,
-          warnings: cached.warnings,
-        },
-      };
-    }
+    result = await readCache(source.cacheKey, settings.cacheTtlMinutes);
+    fromCache = Boolean(result);
+  }
+  if (!result) {
+    const built = await buildSpec(source, settings, rootText);
+    result = {
+      specGz: built.specGz,
+      summary: built.summary,
+      fileCount: built.fileCount,
+      warnings: built.warnings,
+      serversResolvable: built.serversResolvable,
+      fetchedAt: built.fetchedAt,
+    };
+    if (source.cacheKey) await writeCache(source.cacheKey, settings.cacheTtlMinutes, result);
   }
 
-  const bundled = await loadAndBundle(source, { allowExternalUrls: settings.urlSourcesEnabled, rootText });
-  const fetchedAt = new Date().toISOString();
-  if (source.cacheKey) {
-    await writeCache(source.cacheKey, settings.cacheTtlMinutes, { ...bundled, fetchedAt });
-  }
+  const warnings = [...result.warnings];
+  if (!result.serversResolvable && !config.serverUrl && tryItOutAllowed) warnings.push(notice('warnings.relativeServers'));
+
   return {
-    spec: bundled.spec,
-    summary: bundled.summary,
+    specGz: result.specGz,
+    summary: result.summary,
     tryItOutAllowed,
     meta: {
       sourceLabel: source.label,
       sourceLink: source.link,
-      fetchedAt,
-      fromCache: false,
-      fileCount: bundled.fileCount,
-      warnings: bundled.warnings,
+      fetchedAt: result.fetchedAt,
+      fromCache,
+      fileCount: result.fileCount,
+      warnings,
+      serversResolvable: result.serversResolvable,
     },
   };
 }

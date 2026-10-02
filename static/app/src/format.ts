@@ -1,3 +1,4 @@
+import type { Translate } from '../../../src/shared/i18n';
 import type { SpecKind } from '../../../src/shared/types';
 
 export const KIND_LABELS: Record<SpecKind, string> = {
@@ -7,15 +8,30 @@ export const KIND_LABELS: Record<SpecKind, string> = {
   'swagger-2.0': 'Swagger 2.0',
 };
 
-export function relativeTime(iso: string, now = Date.now()): string {
+export function relativeTime(t: Translate, iso: string, locale?: string, now = Date.now()): string {
   const seconds = Math.round((now - Date.parse(iso)) / 1000);
   if (!Number.isFinite(seconds)) return '';
-  if (seconds < 45) return 'just now';
+  if (seconds < 45) return t('ui.time.justNow');
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 60) return t('ui.time.minutesAgo', { n: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
-  return new Date(iso).toLocaleDateString();
+  if (hours < 24) return t('ui.time.hoursAgo', { n: hours });
+  return formatDate(iso, locale);
+}
+
+/** Forge locales use underscores (en_US) in some places; Intl wants a BCP 47 tag. */
+export const toLanguageTag = (locale?: string) => (locale ? locale.replace('_', '-') : undefined);
+
+export function formatDate(iso: string, locale?: string, withTime = false): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  try {
+    return withTime
+      ? date.toLocaleString(toLanguageTag(locale), { dateStyle: 'medium', timeStyle: 'short' })
+      : date.toLocaleDateString(toLanguageTag(locale));
+  } catch {
+    return withTime ? date.toLocaleString() : date.toLocaleDateString();
+  }
 }
 
 export function slugify(value: string): string {

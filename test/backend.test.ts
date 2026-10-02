@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryKvs } from './helpers/memoryKvs';
 
@@ -18,19 +20,25 @@ vi.mock('@forge/kvs', () => ({
   },
 }));
 
-vi.mock('@forge/api', () => ({
-  fetch: (...args: unknown[]) => h.fetchMock(...args),
-  asUser: () => ({ requestConfluence: (...args: unknown[]) => h.userConfluence(...args) }),
-  asApp: () => ({ requestConfluence: (...args: unknown[]) => h.appConfluence(...args) }),
-  route: (strings: TemplateStringsArray, ...values: unknown[]) =>
-    strings.reduce((acc, s, i) => acc + s + (i < values.length ? encodeURIComponent(String(values[i])) : ''), ''),
-  NotAllowedError: h.NotAllowedError,
-}));
+// The real `route` is kept so the tests see the same escaping Forge does.
+vi.mock('@forge/api', async () => {
+  const actual = await vi.importActual<typeof import('@forge/api')>('@forge/api');
+  return {
+    route: actual.route,
+    fetch: (...args: unknown[]) => h.fetchMock(...args),
+    asUser: () => ({ requestConfluence: (path: { value: string }, init: unknown) => h.userConfluence(path.value, init) }),
+    asApp: () => ({ requestConfluence: (path: { value: string }, init: unknown) => h.appConfluence(path.value, init) }),
+    NotAllowedError: h.NotAllowedError,
+  };
+});
 
 import { exportHandler, handler } from '../src/index';
 
-function response(status: number, body: string | object, headers: Record<string, string> = {}) {
-  const text = typeof body === 'string' ? body : JSON.stringify(body);
+const decode = (specGz: string) => JSON.parse(gunzipSync(Buffer.from(specGz, 'base64')).toString('utf8'));
+
+function response(status: number, body: string | object | Buffer, headers: Record<string, string> = {}) {
+  const bytes = Buffer.isBuffer(body) ? body : Buffer.from(typeof body === 'string' ? body : JSON.stringify(body));
+  const text = bytes.toString('utf8');
   const map = new Map(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
   return {
     ok: status >= 200 && status < 300,
@@ -39,6 +47,7 @@ function response(status: number, body: string | object, headers: Record<string,
     headers: { forEach: (cb: (v: string, k: string) => void) => map.forEach((v, k) => cb(v, k)), get: (k: string) => map.get(k.toLowerCase()) ?? null },
     text: async () => text,
     json: async () => JSON.parse(text),
+    arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
   };
 }
 
@@ -56,7 +65,7 @@ async function call(functionKey: string, payload: unknown, opts: { account?: Acc
       },
     } as never,
     { principal: { accountId }, license: opts.license },
-  ) as Promise<{ ok: boolean; value?: any; error?: { code: string; message: string; detail?: string } }>;
+  ) as Promise<{ ok: boolean; value?: any; error?: { code: string; message: string; key?: string; params?: Record<string, unknown>; hintKey?: string; detail?: string } }>;
 }
 
 const ROOT_YAML = `openapi: 3.0.3
@@ -121,7 +130,10 @@ describe('loadSpec from Git', () => {
     expect(first.value.meta.fileCount).toBe(2);
     expect(first.value.meta.fromCache).toBe(false);
     expect(first.value.meta.sourceLink).toBe('https://github.com/acme/payments/blob/main/api/openapi.yaml');
-    expect(JSON.stringify(first.value.spec)).not.toContain('payment.yaml');
+    const spec = decode(first.value.specGz);
+    expect(spec.paths['/payments'].get.responses['200'].content['application/json'].schema).toEqual({ type: 'object', properties: { id: { type: 'string' } } });
+    expect(JSON.stringify(spec)).not.toContain('payment.yaml');
+    expect(first.value.spec).toBeUndefined();
 
     const [, init] = h.fetchMock.mock.calls[0];
     expect(init.headers).toMatchObject({ Authorization: 'Bearer ghp_secret', Accept: 'application/vnd.github.raw+json' });
@@ -175,7 +187,7 @@ describe('loadSpec from Git', () => {
     await seedGithub();
     h.fetchMock.mockRejectedValue(new h.NotAllowedError('URL not included in the external fetch backend permissions'));
     const res = await call('loadSpec', {}, { extension: { config: gitConfig } });
-    expect(res.error?.code).toBe('EGRESS_NOT_APPROVED');
+    expect(res.error).toMatchObject({ code: 'EGRESS_NOT_APPROVED', key: 'errors.egressNotApproved', params: { host: 'api.github.com' }, hintKey: 'hints.askAdminApproveHost' });
     expect(res.error?.message).toContain('api.github.com');
   });
 
@@ -369,5 +381,169 @@ describe('PDF / Word export', () => {
   it('returns a warning panel instead of failing the export', async () => {
     const adf = (await exportHandler({ exportType: 'pdf', config: {}, context: {} })) as { content: Array<{ type: string }> };
     expect(adf.content[0].type).toBe('panel');
+  });
+});
+
+describe('relative server URLs', () => {
+  const relativeSpec = ROOT_YAML.replace("{ $ref: './schemas/payment.yaml' }", '{ type: string }').replace('paths:', "servers:\n  - url: /v1\npaths:");
+
+  it('warns "Try it out" users when servers cannot be resolved', async () => {
+    await h.memory.kvs.set('settings', { tryItOutEnabled: true });
+    const config = { sourceType: 'inline', inlineSpec: relativeSpec, tryItOut: true };
+    const res = await call('loadSpec', {}, { extension: { config } });
+    expect(res.value.meta.serversResolvable).toBe(false);
+    expect(res.value.meta.warnings.map((w: { key: string }) => w.key)).toContain('warnings.relativeServers');
+
+    // A server URL in the macro settings fixes it, so no warning.
+    const fixed = await call('loadSpec', {}, { extension: { config: { ...config, serverUrl: 'https://api.example.com' } } });
+    expect(fixed.value.meta.warnings.map((w: { key: string }) => w.key)).not.toContain('warnings.relativeServers');
+
+    // Readers without Try it out don't need to hear about it.
+    const reader = await call('loadSpec', {}, { account: 'anonymous', extension: { config } });
+    expect(reader.value.meta.warnings).toEqual([]);
+  });
+
+  it('resolves them against the spec URL for URL sources', async () => {
+    await h.memory.kvs.set('settings', { urlSourcesEnabled: true });
+    h.fetchMock.mockResolvedValue(response(200, relativeSpec));
+    const res = await call('loadSpec', {}, { extension: { config: { sourceType: 'url', url: 'https://docs.example.com/specs/openapi.yaml' } } });
+    expect(res.ok).toBe(true);
+    expect(res.value.meta.serversResolvable).toBe(true);
+    expect(decode(res.value.specGz).servers).toEqual([{ url: 'https://docs.example.com/v1' }]);
+    expect(res.value.meta.warnings).toContainEqual(expect.objectContaining({ key: 'warnings.serversResolved', params: { base: 'https://docs.example.com' } }));
+  });
+
+  it('applies the server override to PDF exports', async () => {
+    const adf = (await exportHandler({
+      exportType: 'pdf',
+      config: { sourceType: 'inline', inlineSpec: relativeSpec, serverUrl: 'https://staging.example.com' } as never,
+      context: { extension: { content: { id: '123', type: 'page' } } },
+    })) as unknown;
+    expect(JSON.stringify(adf)).toContain('https://staging.example.com');
+    expect(JSON.stringify(adf)).not.toContain('"/v1"');
+  });
+});
+
+describe('size and time limits', () => {
+  it('refuses attachments over the size limit before downloading them', async () => {
+    h.userConfluence.mockImplementation(async (path: string) =>
+      path.includes('/attachments?') ? response(200, { results: [{ id: 'att1', title: 'huge.yaml', fileSize: 25_000_000 }] }) : response(500, {}),
+    );
+    const res = await call('loadSpec', {}, { extension: { config: { sourceType: 'attachment', attachment: 'huge.yaml' } } });
+    expect(res.error).toMatchObject({ code: 'TOO_LARGE', key: 'errors.fileTooLarge', params: { name: 'huge.yaml', size: 20 } });
+    expect(h.userConfluence.mock.calls.some(([path]) => String(path).includes('/download'))).toBe(false);
+  });
+
+  it('escapes attachment names in Confluence URLs', async () => {
+    h.userConfluence.mockResolvedValue(response(200, { results: [] }));
+    await call('loadSpec', {}, { extension: { config: { sourceType: 'attachment', attachment: 'my spec & v2.yaml' } } });
+    expect(h.userConfluence.mock.calls[0][0]).toBe('/wiki/api/v2/pages/123/attachments?filename=my%20spec%20%26%20v2.yaml&limit=10');
+  });
+
+  it('stops cleanly when the invocation runs out of time', async () => {
+    const { withBudget, timeoutWithinBudget } = await import('../src/backend/budget');
+    await expect(withBudget(500, async () => timeoutWithinBudget(15_000))).rejects.toMatchObject({ error: { code: 'UPSTREAM_ERROR', key: 'errors.deadline' } });
+    await expect(withBudget(10_000, async () => timeoutWithinBudget(15_000))).resolves.toBeLessThanOrEqual(10_000);
+  });
+
+  it('compresses specs and refuses ones too big for the response limit', async () => {
+    const { encodeSpec, decodeSpec } = await import('../src/backend/encoding');
+    const spec = { openapi: '3.0.0', info: { title: 'x', version: '1' }, paths: { '/a': { get: { description: 'a'.repeat(200_000) } } } };
+    const encoded = encodeSpec(spec);
+    expect(encoded.length).toBeLessThan(10_000);
+    expect(decodeSpec(encoded)).toEqual(spec);
+
+    // Random data barely compresses, so this lands well over the cap once base64'd.
+    const noise = randomBytes(4_000_000).toString('base64');
+    expect(() => encodeSpec({ noise })).toThrow(expect.objectContaining({ error: expect.objectContaining({ key: 'errors.bundleTooLarge' }) }));
+  });
+
+  it('drops cached Git specs when the repository generation changes', async () => {
+    await seedGithub();
+    h.fetchMock.mockResolvedValue(response(200, ROOT_YAML.replace("{ $ref: './schemas/payment.yaml' }", '{ type: string }')));
+    await call('loadSpec', {}, { extension: { config: gitConfig } });
+    expect((await call('loadSpec', {}, { extension: { config: gitConfig } })).value.meta.fromCache).toBe(true);
+    const { bumpRepoGeneration } = await import('../src/backend/store');
+    await bumpRepoGeneration('c1', 'acme/payments');
+    expect((await call('loadSpec', {}, { extension: { config: gitConfig } })).value.meta.fromCache).toBe(false);
+  });
+});
+
+describe('Try it out with binary bodies', () => {
+  const config = { sourceType: 'inline', tryItOut: true };
+  beforeEach(async () => {
+    await h.memory.kvs.set('settings', { tryItOutEnabled: true });
+  });
+
+  it('sends base64 bodies as bytes and returns binary responses as base64', async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff]);
+    h.fetchMock.mockResolvedValue(response(200, png, { 'Content-Type': 'image/png' }));
+    const upload = Buffer.from('--b\r\nContent-Disposition: form-data; name="file"; filename="a.bin"\r\n\r\n\u0000\u0001\u0002\r\n--b--\r\n', 'binary');
+    const res = await call(
+      'proxyRequest',
+      { request: { url: 'https://api.example.com/upload', method: 'POST', headers: { 'Content-Type': 'multipart/form-data; boundary=b' }, bodyBase64: upload.toString('base64') } },
+      { extension: { config } },
+    );
+    expect(res.ok).toBe(true);
+    expect(res.value.body).toBeUndefined();
+    expect(Buffer.from(res.value.bodyBase64, 'base64')).toEqual(png);
+    const [, init] = h.fetchMock.mock.calls[0];
+    expect(Buffer.from(init.body as ArrayBuffer)).toEqual(upload);
+    expect(init.headers['Content-Type']).toBe('multipart/form-data; boundary=b');
+  });
+
+  it('rejects uploads over the request limit and oversized binary responses', async () => {
+    const big = Buffer.alloc(400_000).toString('base64');
+    const tooBig = await call('proxyRequest', { request: { url: 'https://api.example.com/upload', method: 'POST', headers: {}, bodyBase64: big } }, { extension: { config } });
+    expect(tooBig.error).toMatchObject({ code: 'TOO_LARGE', key: 'errors.requestTooLarge' });
+    expect(h.fetchMock).not.toHaveBeenCalled();
+
+    h.fetchMock.mockResolvedValue(response(200, Buffer.alloc(3_500_000), { 'Content-Type': 'application/pdf' }));
+    const huge = await call('proxyRequest', { request: { url: 'https://api.example.com/report', method: 'GET', headers: {} } }, { extension: { config } });
+    expect(huge.error).toMatchObject({ code: 'TOO_LARGE', key: 'errors.responseTooLarge' });
+  });
+});
+
+describe('admin activity log', () => {
+  const admin = () => response(200, { operations: [{ operation: 'administer', targetType: 'application' }] });
+
+  it('records changes and shows who made them', async () => {
+    h.userConfluence.mockImplementation(async (path: string) =>
+      path.startsWith('/wiki/rest/api/user/bulk')
+        ? response(200, { results: [{ accountId: 'user-1', displayName: 'Robin Admin' }] })
+        : admin(),
+    );
+    await call('adminSaveSettings', { settings: { urlSourcesEnabled: false, tryItOutEnabled: true, cacheTtlMinutes: 10 } });
+    await call('adminClearCache', {});
+    await call('adminRecordHostChange', { action: 'host.approve', host: 'https://api.example.com', group: 'apis' });
+
+    const res = await call('adminGetAudit', {});
+    expect(res.ok).toBe(true);
+    expect(res.value.map((e: { action: string }) => e.action)).toEqual(['host.approve', 'cache.clear', 'settings.update']);
+    expect(res.value[0]).toMatchObject({ accountId: 'user-1', displayName: 'Robin Admin', target: 'https://api.example.com', changes: ['apis'] });
+    expect(res.value[2].changes).toContain('tryItOutEnabled=true');
+
+    // Repeated accountId params, not one comma-joined value.
+    const bulk = h.userConfluence.mock.calls.map(([path]) => String(path)).find((p) => p.startsWith('/wiki/rest/api/user/bulk'));
+    expect(bulk).toBe('/wiki/rest/api/user/bulk?accountId=user-1');
+  });
+
+  it('logs connection changes by field name only, never the token', async () => {
+    h.userConfluence.mockImplementation(async () => admin());
+    const input = { name: 'Acme', provider: 'github', apiBaseUrl: 'https://api.github.com', webBaseUrl: 'https://github.com', authType: 'bearer', repos: ['acme/*'], spaceKeys: [], token: 'ghp_topsecret' };
+    const saved = await call('adminSaveConnection', { connection: input });
+    await call('adminSaveConnection', { connection: { ...input, id: saved.value.id, repos: ['acme/api'], token: 'ghp_rotated' } });
+    const log = (await h.memory.kvs.get('audit-log')) as Array<{ action: string; changes?: string[] }>;
+    expect(log.map((e) => e.action)).toEqual(['connection.update', 'connection.create']);
+    expect(log[0].changes).toEqual(['repos', 'token']);
+    expect(JSON.stringify(log)).not.toContain('ghp_');
+  });
+
+  it('is admin-only and rejects unknown actions', async () => {
+    h.userConfluence.mockImplementation(async () => response(200, { operations: [] }));
+    expect((await call('adminGetAudit', {})).error?.code).toBe('FORBIDDEN');
+    expect((await call('adminRecordHostChange', { action: 'host.approve', host: 'x', group: 'apis' })).error?.code).toBe('FORBIDDEN');
+    h.userConfluence.mockImplementation(async () => admin());
+    expect((await call('adminRecordHostChange', { action: 'settings.update', host: 'x', group: 'apis' })).error?.code).toBe('BAD_REQUEST');
   });
 });

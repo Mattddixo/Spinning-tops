@@ -16,14 +16,17 @@ If the spec is split into multiple files with relative `$ref`s, those get pulled
 ## Other stuff it does
 
 - Filter by tag or path prefix, hide deprecated endpoints
-- "Try it out" works. Requests go through the app backend instead of the browser, so no CORS errors. Off unless an admin enables it.
+- "Try it out" works. Requests go through the app backend instead of the browser, so no CORS errors. File uploads (multipart and raw binary) work, and images/PDFs come back as downloads. Off unless an admin enables it.
+- Specs with relative server URLs (`/v1`) are resolved against the spec's URL when it has one. Otherwise, or if you want to point at staging, set a server URL in the macro settings.
 - Preview while you edit the macro. You can paste a GitHub/GitLab/Bitbucket file link and it fills in repo, branch and path for you.
 - Several macros on one page work fine
-- Endpoints show up in Confluence search
+- Endpoints show up in Confluence search. If the spec changes after the macro was saved, editors get a note to re-save so search catches up.
 - PDF/Word export prints a table of endpoints instead of a blank box
 - Guests and anonymous users on public spaces can read the docs
 - Follows Confluence light/dark theme
 - Git and URL specs are cached (5 min to 24 h, set by the admin)
+- English, German, French, Spanish and Japanese, following each user's Confluence language
+- The settings page keeps an activity log: who changed settings, connections or approved hosts, and when (last 200 changes)
 
 ## Security notes
 
@@ -31,7 +34,8 @@ If the spec is split into multiple files with relative `$ref`s, those get pulled
 - Git tokens go in Forge secret storage and never get sent to the browser. Each connection has a list of allowed repos and can be limited to certain spaces. File paths are checked (no `../`, spec files only) and the file has to parse as OpenAPI before anything is returned.
 - Permission checks use the context Forge passes to the backend, not anything from the browser. Unsaved preview settings are only accepted from licensed users. The settings page checks the user is a Confluence admin.
 - Licensed users read attachments as themselves. Guests/anonymous users can't, so the app reads for them, but only from the page they're already looking at.
-- The Try it out proxy strips cookies and similar headers, doesn't follow redirects, is https only, and caps requests at 400 KB and responses at 4 MB. Guests and anonymous users can't use it.
+- The Try it out proxy strips cookies and similar headers, doesn't follow redirects, and is https only. Request bodies are capped at 400 KB (350 KB for files), text responses at 4 MB and binary responses at 3 MB. Guests and anonymous users can't use it.
+- The activity log stores field names only (for example "token" changed), never values.
 
 ## Layout
 
@@ -40,6 +44,7 @@ manifest.yml        Forge manifest
 src/index.ts        resolver + export handler
 src/backend/        loading specs, Git/attachment/URL sources, $ref bundling, cache, proxy, admin
 src/shared/         types and logic used by both backend and UI
+locales/            UI text, one JSON file per language (en-US is the source)
 static/app/         the UI (Vite + React + Swagger UI): macro, config dialog, admin page
 test/               unit tests (Vitest)
 e2e/                browser tests (Playwright) with a fake Forge bridge and a strict CSP
@@ -76,10 +81,17 @@ npm run test:e2e     # browser tests; set PLAYWRIGHT_CHROMIUM_PATH if Playwright
 
 If you change permissions in manifest.yml, run `forge install --upgrade` after deploying.
 
+## Translations
+
+`locales/en-US.json` is the source. The other files were translated without a native speaker check, so a review by one is worth doing before a big launch. `npm test` fails if a language file is missing a key, has an extra one, or drops a `{placeholder}`. To add a language, add the file and list it under `translations` in manifest.yml.
+
+Swagger UI's own labels ("Try it out", "Execute", "Responses") stay in English; Swagger UI has no translation support. PDF/Word exports are also English for now.
+
 ## Limits / not supported yet
 
-- Specs up to 4.5 MB total, max 50 referenced files (Forge caps responses at 5 MB)
+- Source files up to 20 MB in total, max 50 referenced files. The bundled spec is sent gzip'd and has to fit in 4.5 MB after compression (Forge caps responses at 5 MB). Most specs compress about 10x.
+- Loading stops after about 22 seconds with a clear message (Forge allows 25 s per call)
 - Pasted specs up to 100,000 characters
 - 10 approved hosts per list (Forge limit). Wildcards like `*.example.com` work.
-- Try it out: no file uploads, no OAuth login flows (API keys and bearer tokens are fine)
+- Try it out: no OAuth login flows yet (API keys and bearer tokens are fine)
 - No AsyncAPI, no Azure DevOps

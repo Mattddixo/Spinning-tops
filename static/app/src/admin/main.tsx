@@ -1,30 +1,37 @@
 import { useCallback, useEffect, useState } from 'react';
 import { originOf, PROVIDERS } from '../../../../src/shared/git';
-import type { AppError, AppSettings, GitAuthType, GitConnection, GitConnectionInput, GitProvider } from '../../../../src/shared/types';
+import type { Translate } from '../../../../src/shared/i18n';
+import type { AppError, AppSettings, AuditEntryView, GitAuthType, GitConnection, GitConnectionInput, GitProvider } from '../../../../src/shared/types';
 import { call, invoke, toAppError } from '../api';
 import { mount } from '../bootstrap';
 import { Button, ErrorMessage, Field, Loading, Message, splitList, Toggle } from '../components/ui';
+import { formatDate } from '../format';
+import { errorText, useI18n, useT } from '../i18n';
 import '../styles/admin.css';
-import { approveHosts, getApprovedHosts, GROUP_INFO, MAX_DOMAINS_PER_GROUP, normaliseHost, removeHost, type EgressGroup } from './egress';
+import { approveHosts, getApprovedHosts, GROUP_INFO, HostLimitError, MAX_DOMAINS_PER_GROUP, normaliseHost, removeHost, type EgressGroup } from './egress';
 
+// Values are translation keys.
 const AUTH_OPTIONS: Record<GitProvider, Array<{ id: GitAuthType; label: string }>> = {
   github: [
-    { id: 'bearer', label: 'Personal access token (Bearer)' },
-    { id: 'none', label: 'No token (public repositories only)' },
+    { id: 'bearer', label: 'ui.admin.authBearerGithub' },
+    { id: 'none', label: 'ui.admin.authNone' },
   ],
   gitlab: [
-    { id: 'private-token', label: 'Access token (PRIVATE-TOKEN header)' },
-    { id: 'bearer', label: 'OAuth token (Bearer)' },
-    { id: 'none', label: 'No token (public projects only)' },
+    { id: 'private-token', label: 'ui.admin.authPrivateToken' },
+    { id: 'bearer', label: 'ui.admin.authBearerGitlab' },
+    { id: 'none', label: 'ui.admin.authNone' },
   ],
   bitbucket: [
-    { id: 'bearer', label: 'Repository, project or workspace access token (Bearer)' },
-    { id: 'basic', label: 'API token with Atlassian account email (Basic)' },
-    { id: 'none', label: 'No token (public repositories only)' },
+    { id: 'bearer', label: 'ui.admin.authBearerBitbucket' },
+    { id: 'basic', label: 'ui.admin.authBasicBitbucket' },
+    { id: 'none', label: 'ui.admin.authNone' },
   ],
 };
 
+const CACHE_OPTIONS = [0, 5, 10, 30, 60, 360, 1440];
+
 type Draft = Omit<GitConnectionInput, 'repos' | 'spaceKeys'> & { repos: string; spaceKeys: string };
+type Status = { kind: 'success' | 'warning' | 'error'; text: string };
 
 const emptyDraft = (provider: GitProvider = 'github'): Draft => ({
   name: '',
@@ -59,9 +66,28 @@ function hostApproved(origin: string | undefined, hosts: string[]): boolean {
   return hosts.some((h) => h === origin || h === '*' || (h.startsWith('*.') && host.endsWith(h.slice(1))));
 }
 
+const errorString = (t: Translate, err: unknown) => {
+  const { title, hint } = errorText(t, toAppError(err));
+  return hint ? `${title} ${hint}` : title;
+};
+
+function hostErrorString(t: Translate, err: unknown, fallbackKey: string) {
+  if (err instanceof HostLimitError) return t('ui.admin.hostLimit', { max: MAX_DOMAINS_PER_GROUP });
+  // Bridge errors from the consent flow are plain Errors without a key.
+  return err instanceof Error && err.message ? `${t(fallbackKey)} ${err.message}` : t(fallbackKey);
+}
+
+// Host approvals go through Atlassian's consent dialog in the browser, so the
+// backend never sees them. Report them so they show up in the activity log.
+// A failed log write never undoes or blocks the approval itself.
+async function recordHostChange(action: 'host.approve' | 'host.remove', group: EgressGroup, hosts: string[]): Promise<void> {
+  await Promise.allSettled(hosts.map((host) => call(invoke('adminRecordHostChange', { action, host, group }))));
+}
+
 function GeneralSettings({ settings, onSaved }: { settings: AppSettings; onSaved: (s: AppSettings) => void }) {
+  const t = useT();
   const [draft, setDraft] = useState(settings);
-  const [status, setStatus] = useState<{ kind: 'success' | 'error'; text: string }>();
+  const [status, setStatus] = useState<Status>();
   const [busy, setBusy] = useState(false);
   const dirty = JSON.stringify(draft) !== JSON.stringify(settings);
 
@@ -72,9 +98,9 @@ function GeneralSettings({ settings, onSaved }: { settings: AppSettings; onSaved
       const saved = await call(invoke('adminSaveSettings', { settings: draft }));
       onSaved(saved);
       setDraft(saved);
-      setStatus({ kind: 'success', text: 'Settings saved.' });
+      setStatus({ kind: 'success', text: t('ui.admin.settingsSaved') });
     } catch (err) {
-      setStatus({ kind: 'error', text: toAppError(err).message });
+      setStatus({ kind: 'error', text: errorString(t, err) });
     } finally {
       setBusy(false);
     }
@@ -85,48 +111,61 @@ function GeneralSettings({ settings, onSaved }: { settings: AppSettings; onSaved
     setStatus(undefined);
     try {
       await call(invoke('adminClearCache'));
-      setStatus({ kind: 'success', text: 'Cache cleared. Pages will reload specs from their sources.' });
+      setStatus({ kind: 'success', text: t('ui.admin.cacheCleared') });
     } catch (err) {
-      setStatus({ kind: 'error', text: toAppError(err).message });
+      setStatus({ kind: 'error', text: errorString(t, err) });
     } finally {
       setBusy(false);
     }
   };
 
+  const cacheLabel = (minutes: number) =>
+    minutes === 0
+      ? t('ui.admin.cacheNone')
+      : minutes < 60
+        ? t('ui.admin.cacheMinutes', { n: minutes })
+        : minutes === 60
+          ? t('ui.admin.cacheHour')
+          : t('ui.admin.cacheHours', { n: minutes / 60 });
+
   return (
     <section className="sp-card sp-stack" aria-labelledby="general-heading">
-      <h2 id="general-heading">General</h2>
+      <h2 id="general-heading">{t('ui.admin.general')}</h2>
       <Toggle
-        label="Allow specs from URLs"
+        label={t('ui.admin.allowUrls')}
         checked={draft.urlSourcesEnabled}
         onChange={(v) => setDraft({ ...draft, urlSourcesEnabled: v })}
-        help="Page editors can load specs from https:// URLs on the spec hosts you approve below."
+        help={t('ui.admin.allowUrlsHelp')}
       />
       <Toggle
-        label='Allow "Try it out"'
+        label={t('ui.admin.allowTryItOut')}
         checked={draft.tryItOutEnabled}
         onChange={(v) => setDraft({ ...draft, tryItOutEnabled: v })}
-        help="Signed-in users can send test requests to the API hosts you approve below. Guests and anonymous visitors can never send requests."
+        help={t('ui.admin.allowTryItOutHelp')}
       />
-      <Field label="Cache specs from Git and URLs for" help="Attachments are never cached because access depends on the reader's page permissions.">
+      <Field label={t('ui.admin.cacheFor')} help={t('ui.admin.cacheHelp')}>
         {(id, describedBy) => (
-          <select id={id} aria-describedby={describedBy} className="sp-select sp-select-narrow" value={draft.cacheTtlMinutes} onChange={(e) => setDraft({ ...draft, cacheTtlMinutes: Number(e.target.value) })}>
-            <option value={0}>Do not cache</option>
-            <option value={5}>5 minutes</option>
-            <option value={10}>10 minutes</option>
-            <option value={30}>30 minutes</option>
-            <option value={60}>1 hour</option>
-            <option value={360}>6 hours</option>
-            <option value={1440}>24 hours</option>
+          <select
+            id={id}
+            aria-describedby={describedBy}
+            className="sp-select sp-select-narrow"
+            value={draft.cacheTtlMinutes}
+            onChange={(e) => setDraft({ ...draft, cacheTtlMinutes: Number(e.target.value) })}
+          >
+            {CACHE_OPTIONS.map((m) => (
+              <option key={m} value={m}>
+                {cacheLabel(m)}
+              </option>
+            ))}
           </select>
         )}
       </Field>
       <div className="sp-row">
         <Button appearance="primary" onClick={() => void save()} disabled={!dirty || busy}>
-          Save settings
+          {t('ui.admin.saveSettings')}
         </Button>
         <Button onClick={() => void clearCache()} disabled={busy}>
-          Clear cache
+          {t('ui.admin.clearCache')}
         </Button>
         {status ? <span className={status.kind === 'error' ? 'sp-error-text' : 'sp-help'}>{status.text}</span> : null}
       </div>
@@ -135,24 +174,27 @@ function GeneralSettings({ settings, onSaved }: { settings: AppSettings; onSaved
 }
 
 function HostList({ group, hosts, onChange }: { group: EgressGroup; hosts: string[]; onChange: () => Promise<void> }) {
+  const t = useT();
   const [input, setInput] = useState('');
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const full = hosts.length >= MAX_DOMAINS_PER_GROUP;
 
   const add = async () => {
     const host = normaliseHost(input);
     if (!host) {
-      setError('Enter an https host such as api.example.com or a wildcard such as *.example.com.');
+      setError(t('ui.admin.hostInvalid'));
       return;
     }
     setBusy(true);
     setError(undefined);
     try {
-      await approveHosts(group, [host]);
+      const added = await approveHosts(group, [host]);
+      await recordHostChange('host.approve', group, added);
       setInput('');
       await onChange();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'The host was not approved.');
+      setError(hostErrorString(t, err, 'ui.admin.hostNotApproved'));
     } finally {
       setBusy(false);
     }
@@ -160,49 +202,53 @@ function HostList({ group, hosts, onChange }: { group: EgressGroup; hosts: strin
 
   const remove = async (domain: string) => {
     setBusy(true);
+    setError(undefined);
     try {
       await removeHost(group, domain);
+      await recordHostChange('host.remove', group, [domain]);
       await onChange();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'The host could not be removed.');
+      setError(hostErrorString(t, err, 'ui.admin.hostNotRemoved'));
     } finally {
       setBusy(false);
     }
   };
 
+  const title = t(GROUP_INFO[group].title);
   return (
     <div className="sp-stack-tight">
-      <h3>{GROUP_INFO[group].title}</h3>
+      <h3>{title}</h3>
       {hosts.length ? (
         <ul className="sp-host-list">
           {hosts.map((h) => (
             <li key={h}>
               <code>{h}</code>
-              <Button compact appearance="subtle" onClick={() => void remove(h)} disabled={busy} aria-label={`Remove ${h}`}>
-                Remove
+              <Button compact appearance="subtle" onClick={() => void remove(h)} disabled={busy} aria-label={t('ui.admin.hostRemoveLabel', { host: h })}>
+                {t('ui.common.remove')}
               </Button>
             </li>
           ))}
         </ul>
       ) : (
-        <span className="sp-help">No hosts approved.</span>
+        <span className="sp-help">{t('ui.admin.hostsNone')}</span>
       )}
       {group !== 'git' ? (
         <div className="sp-row sp-row-nowrap">
           <input
             className="sp-input"
-            aria-label={`Add to ${GROUP_INFO[group].title}`}
-            placeholder="api.example.com or *.example.com"
+            aria-label={t('ui.admin.hostAddTo', { list: title })}
+            placeholder={t('ui.admin.hostPlaceholder')}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && void add()}
-            disabled={busy || hosts.length >= MAX_DOMAINS_PER_GROUP}
+            disabled={busy || full}
           />
-          <Button onClick={() => void add()} disabled={busy || !input.trim() || hosts.length >= MAX_DOMAINS_PER_GROUP}>
-            Approve
+          <Button onClick={() => void add()} disabled={busy || !input.trim() || full}>
+            {t('ui.common.approve')}
           </Button>
         </div>
       ) : null}
+      {full && group !== 'git' ? <span className="sp-help">{t('ui.admin.hostLimit', { max: MAX_DOMAINS_PER_GROUP })}</span> : null}
       {error ? <span className="sp-error-text">{error}</span> : null}
     </div>
   );
@@ -219,9 +265,11 @@ function ConnectionEditor({
   onCancel: () => void;
   onSaved: (c: GitConnection) => Promise<void>;
 }) {
+  const t = useT();
   const [error, setError] = useState<AppError>();
   const [busy, setBusy] = useState(false);
   const isNew = !draft.id;
+  const heading = isNew ? t('ui.admin.newConnection') : t('ui.admin.editConnection', { name: draft.name });
 
   const changeProvider = (provider: GitProvider) =>
     setDraft({ ...draft, provider, apiBaseUrl: PROVIDERS[provider].apiBaseUrl, webBaseUrl: PROVIDERS[provider].webBaseUrl, authType: AUTH_OPTIONS[provider][0].id });
@@ -246,57 +294,54 @@ function ConnectionEditor({
     }
   };
 
+  const apiHelp = draft.provider === 'github' ? t('ui.admin.apiUrlGithubHelp') : draft.provider === 'gitlab' ? t('ui.admin.apiUrlGitlabHelp') : undefined;
+
   return (
-    <div className="sp-card sp-stack" role="group" aria-label={isNew ? 'New Git connection' : `Edit ${draft.name}`}>
-      <h3>{isNew ? 'Add a Git connection' : `Edit “${draft.name}”`}</h3>
+    <div className="sp-card sp-stack" role="group" aria-label={heading}>
+      <h3>{heading}</h3>
       {error ? <ErrorMessage error={error} /> : null}
       <div className="sp-grid-2">
-        <Field label="Provider">
+        <Field label={t('ui.admin.provider')}>
           {(id) => (
             <select id={id} className="sp-select" value={draft.provider} onChange={(e) => changeProvider(e.target.value as GitProvider)}>
               {(Object.keys(PROVIDERS) as GitProvider[]).map((p) => (
                 <option key={p} value={p}>
-                  {PROVIDERS[p].label}
+                  {t(`ui.provider.${p}`)}
                 </option>
               ))}
             </select>
           )}
         </Field>
-        <Field label="Name" help="Shown to page editors.">
+        <Field label={t('ui.admin.name')} help={t('ui.admin.nameHelp')}>
           {(id, d) => <input id={id} aria-describedby={d} className="sp-input" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Acme GitHub" />}
         </Field>
-        <Field label="API URL" help={draft.provider === 'github' ? 'GitHub Enterprise Server: https://HOST/api/v3' : draft.provider === 'gitlab' ? 'Self-managed: https://HOST/api/v4' : undefined}>
+        <Field label={t('ui.admin.apiUrl')} help={apiHelp}>
           {(id, d) => <input id={id} aria-describedby={d} className="sp-input" value={draft.apiBaseUrl} onChange={(e) => setDraft({ ...draft, apiBaseUrl: e.target.value })} />}
         </Field>
-        <Field label="Web URL" help="Used for “view source” links.">
+        <Field label={t('ui.admin.webUrl')} help={t('ui.admin.webUrlHelp')}>
           {(id, d) => <input id={id} aria-describedby={d} className="sp-input" value={draft.webBaseUrl} onChange={(e) => setDraft({ ...draft, webBaseUrl: e.target.value })} />}
         </Field>
       </div>
-      <Field label="Authentication">
+      <Field label={t('ui.admin.auth')}>
         {(id) => (
           <select id={id} className="sp-select" value={draft.authType} onChange={(e) => setDraft({ ...draft, authType: e.target.value as GitAuthType })}>
             {AUTH_OPTIONS[draft.provider].map((o) => (
               <option key={o.id} value={o.id}>
-                {o.label}
+                {t(o.label)}
               </option>
             ))}
           </select>
         )}
       </Field>
       {draft.authType === 'basic' ? (
-        <Field label="Atlassian account email">
+        <Field label={t('ui.admin.email')}>
           {(id) => <input id={id} className="sp-input" type="email" autoComplete="off" value={draft.username ?? ''} onChange={(e) => setDraft({ ...draft, username: e.target.value })} />}
         </Field>
       ) : null}
       {draft.authType !== 'none' ? (
         <Field
-          label="Access token"
-          help={
-            <>
-              {PROVIDERS[draft.provider].tokenHint} Stored encrypted with Forge secret storage and never sent back to the browser.
-              {!isNew ? ' Leave empty to keep the current token.' : ''}
-            </>
-          }
+          label={t('ui.admin.token')}
+          help={[t(`ui.provider.${draft.provider}Token`), t('ui.admin.tokenHelpSuffix'), isNew ? '' : t('ui.admin.tokenKeep')].filter(Boolean).join(' ')}
         >
           {(id, d) => (
             <input
@@ -305,30 +350,30 @@ function ConnectionEditor({
               className="sp-input"
               type="password"
               autoComplete="new-password"
-              placeholder={isNew ? '' : '••••••••  (stored)'}
+              placeholder={isNew ? '' : t('ui.admin.tokenStored')}
               value={draft.token ?? ''}
               onChange={(e) => setDraft({ ...draft, token: e.target.value })}
             />
           )}
         </Field>
       ) : null}
-      <Field label="Allowed repositories" help={`One per line, e.g. ${PROVIDERS[draft.provider].repoHint} or a wildcard such as acme/*. Page editors can only use these.`}>
+      <Field label={t('ui.admin.repos')} help={t('ui.admin.reposHelp', { hint: PROVIDERS[draft.provider].repoHint })}>
         {(id, d) => <textarea id={id} aria-describedby={d} className="sp-input sp-input-short" rows={3} value={draft.repos} onChange={(e) => setDraft({ ...draft, repos: e.target.value })} />}
       </Field>
       <div className="sp-grid-2">
-        <Field label="Limit to spaces (optional)" help="Comma-separated space keys. Empty means all spaces.">
+        <Field label={t('ui.admin.spaces')} help={t('ui.admin.spacesHelp')}>
           {(id, d) => <input id={id} aria-describedby={d} className="sp-input" value={draft.spaceKeys} onChange={(e) => setDraft({ ...draft, spaceKeys: e.target.value })} placeholder="ENG, API" />}
         </Field>
-        <Field label="Default branch (optional)">
+        <Field label={t('ui.admin.defaultRef')}>
           {(id) => <input id={id} className="sp-input" value={draft.defaultRef ?? ''} onChange={(e) => setDraft({ ...draft, defaultRef: e.target.value })} placeholder="main" />}
         </Field>
       </div>
       <div className="sp-row sp-row-end">
         <Button appearance="subtle" onClick={onCancel} disabled={busy}>
-          Cancel
+          {t('ui.common.cancel')}
         </Button>
         <Button appearance="primary" onClick={() => void save()} disabled={busy}>
-          {busy ? 'Saving…' : 'Save connection'}
+          {busy ? t('ui.common.saving') : t('ui.admin.saveConnection')}
         </Button>
       </div>
     </div>
@@ -336,6 +381,7 @@ function ConnectionEditor({
 }
 
 function TestConnection({ connection }: { connection: GitConnection }) {
+  const t = useT();
   const [repo, setRepo] = useState(connection.repos.find((r) => !r.includes('*')) ?? '');
   const [path, setPath] = useState('openapi.yaml');
   const [ref, setRef] = useState(connection.defaultRef ?? '');
@@ -347,7 +393,10 @@ function TestConnection({ connection }: { connection: GitConnection }) {
     setResult(undefined);
     try {
       const r = await call(invoke('adminTestConnection', { id: connection.id, repo, path, ref }));
-      setResult({ ok: true, text: `Loaded ${r.title}${r.version ? ` v${r.version}` : ''}: ${r.operationCount} operations, ${r.fileCount} file(s).` });
+      setResult({
+        ok: true,
+        text: t('ui.admin.testResult', { title: r.title, version: r.version ? ` v${r.version}` : '', ops: r.operationCount, files: r.fileCount }),
+      });
     } catch (err) {
       setResult({ ok: false, error: toAppError(err) });
     } finally {
@@ -358,11 +407,11 @@ function TestConnection({ connection }: { connection: GitConnection }) {
   return (
     <div className="sp-test sp-stack-tight">
       <div className="sp-row sp-row-nowrap">
-        <input className="sp-input" aria-label="Repository" placeholder={PROVIDERS[connection.provider].repoHint} value={repo} onChange={(e) => setRepo(e.target.value)} />
-        <input className="sp-input" aria-label="Branch" placeholder="branch" value={ref} onChange={(e) => setRef(e.target.value)} />
-        <input className="sp-input" aria-label="File path" placeholder="openapi.yaml" value={path} onChange={(e) => setPath(e.target.value)} />
+        <input className="sp-input" aria-label={t('ui.admin.testRepo')} placeholder={PROVIDERS[connection.provider].repoHint} value={repo} onChange={(e) => setRepo(e.target.value)} />
+        <input className="sp-input" aria-label={t('ui.admin.testBranch')} placeholder="main" value={ref} onChange={(e) => setRef(e.target.value)} />
+        <input className="sp-input" aria-label={t('ui.admin.testPath')} placeholder="openapi.yaml" value={path} onChange={(e) => setPath(e.target.value)} />
         <Button onClick={() => void run()} disabled={busy || !repo || !path}>
-          {busy ? 'Testing…' : 'Test'}
+          {busy ? t('ui.common.testing') : t('ui.common.test')}
         </Button>
       </div>
       {result ? result.ok ? <Message appearance="success">{result.text}</Message> : <ErrorMessage error={result.error} /> : null}
@@ -370,55 +419,146 @@ function TestConnection({ connection }: { connection: GitConnection }) {
   );
 }
 
+function describeAudit(t: Translate, entry: AuditEntryView): string {
+  const action = t(`ui.audit.${entry.action}`);
+  let details = entry.target ?? '';
+  if (entry.action === 'host.approve' || entry.action === 'host.remove') {
+    // changes holds the egress group for host entries.
+    const group = entry.changes?.[0] as EgressGroup | undefined;
+    if (group && GROUP_INFO[group]) details = `${details} (${t(GROUP_INFO[group].title)})`;
+  } else if (entry.changes?.length) {
+    details = details ? `${details}: ${entry.changes.join(', ')}` : entry.changes.join(', ');
+  }
+  return details ? `${action}: ${details}` : action;
+}
+
+function Activity({ refreshKey }: { refreshKey: number }) {
+  const { t, locale } = useI18n();
+  const [entries, setEntries] = useState<AuditEntryView[]>();
+  const [error, setError] = useState<AppError>();
+
+  useEffect(() => {
+    let cancelled = false;
+    call(invoke('adminGetAudit'))
+      .then((list) => {
+        if (!cancelled) {
+          setEntries(list);
+          setError(undefined);
+        }
+      })
+      .catch((err) => !cancelled && setError(toAppError(err)));
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
+
+  return (
+    <section className="sp-card sp-stack" aria-labelledby="activity-heading">
+      <div className="sp-row">
+        <h2 id="activity-heading">{t('ui.admin.activity')}</h2>
+      </div>
+      <p className="sp-muted">{t('ui.admin.activityIntro')}</p>
+      {error ? <ErrorMessage error={{ ...error, key: 'ui.admin.activityLoadFailed', message: t('ui.admin.activityLoadFailed') }} /> : null}
+      {!entries && !error ? <Loading /> : null}
+      {entries && !entries.length ? <span className="sp-help">{t('ui.admin.activityNone')}</span> : null}
+      {entries?.length ? (
+        <div className="sp-table-scroll">
+          <table className="sp-table">
+            <thead>
+              <tr>
+                <th scope="col">{t('ui.admin.colWhen')}</th>
+                <th scope="col">{t('ui.admin.colWho')}</th>
+                <th scope="col">{t('ui.admin.colWhat')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((e, i) => (
+                <tr key={`${e.at}-${i}`}>
+                  <td className="sp-nowrap">
+                    <time dateTime={e.at}>{formatDate(e.at, locale, true)}</time>
+                  </td>
+                  <td>{e.displayName ?? e.accountId}</td>
+                  <td>{describeAudit(t, e)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function AdminApp() {
+  const t = useT();
   const [state, setState] = useState<{ settings: AppSettings; connections: GitConnection[] }>();
   const [error, setError] = useState<AppError>();
   const [hosts, setHosts] = useState<Record<EgressGroup, string[]>>();
   const [hostsError, setHostsError] = useState<string>();
   const [draft, setDraft] = useState<Draft>();
   const [testing, setTesting] = useState<string>();
-  const [notice, setNotice] = useState<{ kind: 'success' | 'warning' | 'error'; text: string }>();
+  const [notice, setNotice] = useState<Status>();
+  // Bumped after each change so the activity log reloads.
+  const [activityKey, setActivityKey] = useState(0);
+  const changed = () => setActivityKey((k) => k + 1);
 
   const loadHosts = useCallback(async () => {
     try {
       setHosts(await getApprovedHosts());
       setHostsError(undefined);
     } catch (err) {
-      setHostsError(err instanceof Error ? err.message : 'Approved hosts could not be loaded.');
+      setHostsError(err instanceof Error && err.message ? err.message : 'load-failed');
       setHosts({ git: [], specs: [], apis: [] });
     }
   }, []);
+
+  const hostsChanged = useCallback(async () => {
+    await loadHosts();
+    setActivityKey((k) => k + 1);
+  }, [loadHosts]);
 
   useEffect(() => {
     call(invoke('adminGetState')).then(setState).catch((err) => setError(toAppError(err)));
     void loadHosts();
   }, [loadHosts]);
 
+  const approveGitHost = async (origin: string): Promise<boolean> => {
+    const added = await approveHosts('git', [origin]);
+    await recordHostChange('host.approve', 'git', added);
+    await hostsChanged();
+    return added.length > 0;
+  };
+
   const onConnectionSaved = async (saved: GitConnection) => {
     setState((s) => s && { ...s, connections: s.connections.some((c) => c.id === saved.id) ? s.connections.map((c) => (c.id === saved.id ? saved : c)) : [...s.connections, saved] });
     setDraft(undefined);
+    changed();
     const origin = originOf(saved.apiBaseUrl);
     if (origin && hosts && !hostApproved(origin, hosts.git)) {
       try {
-        await approveHosts('git', [origin]);
-        await loadHosts();
-        setNotice({ kind: 'success', text: `Connection saved and ${origin} approved.` });
+        const ok = await approveGitHost(origin);
+        setNotice(
+          ok
+            ? { kind: 'success', text: t('ui.admin.connectionSavedApproved', { host: origin }) }
+            : { kind: 'warning', text: t('ui.admin.connectionSavedNotApproved', { host: origin, reason: '' }).trim() },
+        );
       } catch (err) {
-        setNotice({ kind: 'warning', text: `Connection saved, but ${origin} was not approved, so pages cannot load from it yet. ${err instanceof Error ? err.message : ''}` });
+        setNotice({ kind: 'warning', text: t('ui.admin.connectionSavedNotApproved', { host: origin, reason: hostErrorString(t, err, 'ui.admin.notApproved') }) });
       }
     } else {
-      setNotice({ kind: 'success', text: 'Connection saved.' });
+      setNotice({ kind: 'success', text: t('ui.admin.connectionSaved') });
     }
   };
 
   const remove = async (connection: GitConnection) => {
-    if (!window.confirm(`Delete the connection “${connection.name}”? Macros that use it will stop loading.`)) return;
+    if (!window.confirm(t('ui.admin.deleteConfirm', { name: connection.name }))) return;
     try {
       await call(invoke('adminDeleteConnection', { id: connection.id }));
       setState((s) => s && { ...s, connections: s.connections.filter((c) => c.id !== connection.id) });
-      setNotice({ kind: 'success', text: 'Connection deleted.' });
+      setNotice({ kind: 'success', text: t('ui.admin.connectionDeleted') });
+      changed();
     } catch (err) {
-      setNotice({ kind: 'error', text: toAppError(err).message });
+      setNotice({ kind: 'error', text: errorString(t, err) });
     }
   };
 
@@ -429,75 +569,77 @@ function AdminApp() {
       </main>
     );
   }
-  if (!state || !hosts) return <Loading label="Loading SpecPage settings…" />;
+  if (!state || !hosts) return <Loading label={t('ui.admin.loading')} />;
 
   return (
     <main className="sp-admin sp-stack">
       <header className="sp-stack-tight">
-        <h1>SpecPage settings</h1>
-        <p className="sp-muted">Control where API specs can be loaded from and whether readers can send test requests.</p>
+        <h1>{t('ui.admin.title')}</h1>
+        <p className="sp-muted">{t('ui.admin.intro')}</p>
       </header>
 
       {notice ? <Message appearance={notice.kind}>{notice.text}</Message> : null}
 
-      <GeneralSettings settings={state.settings} onSaved={(settings) => setState({ ...state, settings })} />
+      <GeneralSettings
+        settings={state.settings}
+        onSaved={(settings) => {
+          setState({ ...state, settings });
+          changed();
+        }}
+      />
 
       <section className="sp-card sp-stack" aria-labelledby="git-heading">
         <div className="sp-row">
-          <h2 id="git-heading">Git connections</h2>
+          <h2 id="git-heading">{t('ui.admin.git')}</h2>
           <div className="sp-spacer" />
           {!draft ? (
             <Button appearance="primary" onClick={() => setDraft(emptyDraft())}>
-              Add connection
+              {t('ui.admin.addConnection')}
             </Button>
           ) : null}
         </div>
-        <p className="sp-muted">Connect GitHub, GitLab or Bitbucket so pages always show the latest spec. Use read-only tokens scoped to the repositories you list.</p>
+        <p className="sp-muted">{t('ui.admin.gitIntro')}</p>
         {draft ? <ConnectionEditor draft={draft} setDraft={setDraft} onCancel={() => setDraft(undefined)} onSaved={onConnectionSaved} /> : null}
         {state.connections.length ? (
           <table className="sp-table">
             <thead>
               <tr>
-                <th scope="col">Name</th>
-                <th scope="col">Repositories</th>
-                <th scope="col">Spaces</th>
-                <th scope="col">Status</th>
+                <th scope="col">{t('ui.admin.colName')}</th>
+                <th scope="col">{t('ui.admin.colRepos')}</th>
+                <th scope="col">{t('ui.admin.colSpaces')}</th>
+                <th scope="col">{t('ui.admin.colStatus')}</th>
                 <th scope="col">
-                  <span className="sp-visually-hidden">Actions</span>
+                  <span className="sp-visually-hidden">{t('ui.admin.colActions')}</span>
                 </th>
               </tr>
             </thead>
             <tbody>
               {state.connections.map((c) => {
-                const approved = hostApproved(originOf(c.apiBaseUrl), hosts.git);
+                const origin = originOf(c.apiBaseUrl);
+                const approved = hostApproved(origin, hosts.git);
                 return (
                   <tr key={c.id}>
                     <td>
                       <strong>{c.name}</strong>
-                      <div className="sp-small">{PROVIDERS[c.provider].label}</div>
+                      <div className="sp-small">{t(`ui.provider.${c.provider}`)}</div>
                       {testing === c.id ? <TestConnection connection={c} /> : null}
                     </td>
                     <td>{c.repos.join(', ')}</td>
-                    <td>{c.spaceKeys.length ? c.spaceKeys.join(', ') : 'All'}</td>
+                    <td>{c.spaceKeys.length ? c.spaceKeys.join(', ') : t('ui.common.all')}</td>
                     <td>
                       <div className="sp-stack-tight">
                         <span className={`sp-lozenge ${c.hasToken || c.authType === 'none' ? 'sp-lozenge-success' : 'sp-lozenge-warning'}`}>
-                          {c.authType === 'none' ? 'Public' : c.hasToken ? 'Token stored' : 'No token'}
+                          {c.authType === 'none' ? t('ui.admin.statusPublic') : c.hasToken ? t('ui.admin.statusToken') : t('ui.admin.statusNoToken')}
                         </span>
-                        <span className={`sp-lozenge ${approved ? 'sp-lozenge-success' : 'sp-lozenge-warning'}`}>{approved ? 'Host approved' : 'Host not approved'}</span>
-                        {!approved ? (
+                        <span className={`sp-lozenge ${approved ? 'sp-lozenge-success' : 'sp-lozenge-warning'}`}>
+                          {approved ? t('ui.admin.statusHostOk') : t('ui.admin.statusHostMissing')}
+                        </span>
+                        {!approved && origin ? (
                           <Button
                             compact
-                            onClick={() => {
-                              const origin = originOf(c.apiBaseUrl);
-                              if (origin) {
-                                approveHosts('git', [origin])
-                                  .then(loadHosts)
-                                  .catch((err) => setNotice({ kind: 'error', text: err instanceof Error ? err.message : 'Not approved.' }));
-                              }
-                            }}
+                            onClick={() => approveGitHost(origin).catch((err) => setNotice({ kind: 'error', text: hostErrorString(t, err, 'ui.admin.notApproved') }))}
                           >
-                            Approve host
+                            {t('ui.admin.approveHost')}
                           </Button>
                         ) : null}
                       </div>
@@ -505,13 +647,13 @@ function AdminApp() {
                     <td>
                       <div className="sp-row sp-row-nowrap">
                         <Button compact onClick={() => setTesting(testing === c.id ? undefined : c.id)}>
-                          Test
+                          {t('ui.common.test')}
                         </Button>
                         <Button compact onClick={() => setDraft(toDraft(c))}>
-                          Edit
+                          {t('ui.common.edit')}
                         </Button>
                         <Button compact appearance="subtle" onClick={() => void remove(c)}>
-                          Delete
+                          {t('ui.common.delete')}
                         </Button>
                       </div>
                     </td>
@@ -521,22 +663,24 @@ function AdminApp() {
             </tbody>
           </table>
         ) : !draft ? (
-          <span className="sp-help">No connections yet.</span>
+          <span className="sp-help">{t('ui.admin.noConnections')}</span>
         ) : null}
       </section>
 
       <section className="sp-card sp-stack" aria-labelledby="hosts-heading">
-        <h2 id="hosts-heading">Approved hosts</h2>
-        <p className="sp-muted">
-          SpecPage can only contact hosts you approve here. Atlassian asks you to confirm each change, and you can review or revoke them at any time in Atlassian Administration → Connected apps.
-        </p>
-        {hostsError ? <Message appearance="warning">{hostsError}</Message> : null}
+        <h2 id="hosts-heading">{t('ui.admin.hosts')}</h2>
+        <p className="sp-muted">{t('ui.admin.hostsIntro')}</p>
+        {hostsError ? (
+          <Message appearance="warning">{hostsError === 'load-failed' ? t('ui.admin.hostsLoadFailed') : `${t('ui.admin.hostsLoadFailed')} ${hostsError}`}</Message>
+        ) : null}
         <div className="sp-host-grid">
           {(Object.keys(GROUP_INFO) as EgressGroup[]).map((g) => (
-            <HostList key={g} group={g} hosts={hosts[g]} onChange={loadHosts} />
+            <HostList key={g} group={g} hosts={hosts[g]} onChange={hostsChanged} />
           ))}
         </div>
       </section>
+
+      <Activity refreshKey={activityKey} />
     </main>
   );
 }

@@ -1,4 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import { buildSearchText, filterSpec, summarizeSpec } from '../src/shared/spec';
+
+const catalog = (locale: string) => JSON.parse(readFileSync(join(__dirname, '..', 'locales', `${locale}.json`), 'utf8')) as Record<string, unknown>;
 
 const SPEC = {
   openapi: '3.1.0',
@@ -16,6 +21,20 @@ const SPEC = {
       },
     },
     '/refunds': { get: { tags: ['refunds'], summary: 'List refunds', deprecated: true, responses: { '200': { description: 'OK' } } } },
+    '/receipts': {
+      post: {
+        tags: ['payments'],
+        summary: 'Upload receipt',
+        requestBody: {
+          content: {
+            'multipart/form-data': {
+              schema: { type: 'object', properties: { note: { type: 'string' }, file: { type: 'string', format: 'binary' } } },
+            },
+          },
+        },
+        responses: { '200': { description: 'Receipt image', content: { 'image/png': { schema: { type: 'string', format: 'binary' } } } } },
+      },
+    },
   },
   components: { schemas: { Payment: { type: 'object', properties: { amount: { type: 'integer' } } } } },
 };
@@ -30,10 +49,20 @@ const SUMMARY = {
     { method: 'GET', path: '/payments', summary: 'List payments', tags: ['payments'], deprecated: false },
     { method: 'POST', path: '/payments', summary: 'Create payment', tags: ['payments'], deprecated: false },
     { method: 'GET', path: '/refunds', summary: 'List refunds', tags: ['refunds'], deprecated: true },
+    { method: 'POST', path: '/receipts', summary: 'Upload receipt', tags: ['payments'], deprecated: false },
   ],
 };
 
-type Setup = { config?: Record<string, unknown>; tryItOut?: boolean; loadError?: { code: string; message: string; detail?: string } };
+type Setup = {
+  config?: Record<string, unknown>;
+  isEditing?: boolean;
+  tryItOut?: boolean;
+  loadError?: Record<string, unknown>;
+  spec?: Record<string, unknown>;
+  meta?: Record<string, unknown>;
+  translations?: { locale: string; translations: Record<string, unknown> };
+  audit?: unknown[];
+};
 
 async function installHarness(page: Page, setup: Setup = {}) {
   const errors: string[] = [];
@@ -54,21 +83,42 @@ async function installHarness(page: Page, setup: Setup = {}) {
         (w.__CSP__ as string[]).push(`${e.violatedDirective} ${e.blockedURI}`);
       });
       const ok = (value: unknown) => ({ ok: true, value });
+      // Same transport as the backend: gzip'd JSON, base64.
+      const gzip = async (value: unknown) => {
+        const stream = new Blob([JSON.stringify(value)]).stream().pipeThrough(new CompressionStream('gzip'));
+        const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+        let binary = '';
+        for (const b of bytes) binary += String.fromCharCode(b);
+        return btoa(binary);
+      };
       w.__SPECPAGE_HARNESS__ = {
-        context: { extension: { config: setup.config ?? {}, isEditing: false } },
+        context: { extension: { config: setup.config ?? {}, isEditing: setup.isEditing === true } },
+        translations: setup.translations,
         egress: [{ key: 'specpage-git-hosts', description: 'git', configured: [{ domain: 'https://api.github.com', type: ['FETCH_BACKEND_SIDE'] }] }],
         resolvers: {
-          loadSpec: () =>
+          loadSpec: async () =>
             setup.loadError
               ? { ok: false, error: setup.loadError }
               : ok({
-                  spec: JSON.parse(JSON.stringify(spec)),
+                  specGz: await gzip(setup.spec ?? spec),
                   summary,
                   tryItOutAllowed: setup.tryItOut === true,
-                  meta: { sourceLabel: 'acme/payments@main: openapi.yaml', sourceLink: 'https://github.com/acme/payments/blob/main/openapi.yaml', fetchedAt: new Date().toISOString(), fromCache: true, fileCount: 2, warnings: [] },
+                  meta: {
+                    sourceLabel: 'acme/payments@main: openapi.yaml',
+                    sourceLink: 'https://github.com/acme/payments/blob/main/openapi.yaml',
+                    fetchedAt: new Date().toISOString(),
+                    fromCache: true,
+                    fileCount: 2,
+                    warnings: [],
+                    serversResolvable: true,
+                    ...setup.meta,
+                  },
                 }),
           proxyRequest: (payload: { request: { url: string; method: string } }) =>
-            ok({ status: 200, statusText: 'OK', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ echoed: payload.request.url, method: payload.request.method }), truncated: false }),
+            payload.request.url.endsWith('/receipts')
+              ? // 1x1 transparent PNG
+                ok({ status: 200, statusText: 'OK', headers: { 'content-type': 'image/png' }, bodyBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', truncated: false })
+              : ok({ status: 200, statusText: 'OK', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ echoed: payload.request.url, method: payload.request.method }), truncated: false }),
           listAttachments: () => ok([{ title: 'openapi.yaml', fileSize: 2048 }]),
           getEditorOptions: () => ok({ connections: [{ id: 'c1', name: 'Acme GitHub', provider: 'github', repos: ['acme/payments', 'acme/*'] }], urlSourcesEnabled: false, tryItOutEnabled: true }),
           adminGetState: () =>
@@ -81,6 +131,8 @@ async function installHarness(page: Page, setup: Setup = {}) {
           adminSaveConnection: (payload: { connection: Record<string, unknown> }) =>
             ok({ ...payload.connection, id: 'c2', hasToken: true, createdAt: 'x', updatedAt: 'x', token: undefined }),
           adminSaveSettings: (payload: { settings: unknown }) => ok(payload.settings),
+          adminGetAudit: () => ok(setup.audit ?? []),
+          adminRecordHostChange: () => ok({ recorded: true }),
         },
       };
     },
@@ -88,6 +140,19 @@ async function installHarness(page: Page, setup: Setup = {}) {
   );
   return errors;
 }
+
+const EGRESS_ERROR = {
+  code: 'EGRESS_NOT_APPROVED',
+  key: 'errors.egressNotApproved',
+  params: { host: 'api.github.com' },
+  message: "SpecPage isn't allowed to contact api.github.com yet.",
+  hintKey: 'hints.askAdminApproveHost',
+  hint: 'A Confluence admin can approve this host in SpecPage settings.',
+};
+
+type Call = { fn: string; payload: { request?: { url: string; method: string; headers: Record<string, string>; body?: string; bodyBase64?: string } } };
+const proxyCalls = async (page: Page) =>
+  (await page.evaluate(() => (window as unknown as { __SPECPAGE_CALLS__: Call[] }).__SPECPAGE_CALLS__)).filter((c) => c.fn === 'proxyRequest');
 
 async function cspViolations(page: Page) {
   return page.evaluate(() => (window as unknown as { __CSP__: string[] }).__CSP__);
@@ -132,8 +197,7 @@ test('"Try it out" requests go through the backend proxy', async ({ page }) => {
   await op.getByRole('button', { name: 'Execute' }).click();
   await expect(op.locator('.response-col_status').filter({ hasText: '200' }).first()).toBeVisible();
   await expect(op.getByText('"echoed"', { exact: false }).first()).toBeVisible();
-  const calls = await page.evaluate(() => (window as unknown as { __SPECPAGE_CALLS__: Array<{ fn: string; payload: { request?: { url: string; method: string } } }> }).__SPECPAGE_CALLS__);
-  const proxied = calls.find((c) => c.fn === 'proxyRequest');
+  const [proxied] = await proxyCalls(page);
   expect(proxied?.payload.request).toMatchObject({ url: 'https://api.example.com/v1/payments', method: 'GET' });
   expect(await cspViolations(page)).toEqual([]);
 });
@@ -147,9 +211,10 @@ test('"Try it out" is hidden when not allowed', async ({ page }) => {
 });
 
 test('macro shows friendly errors with retry', async ({ page }) => {
-  await installHarness(page, { loadError: { code: 'EGRESS_NOT_APPROVED', message: 'SpecPage is not allowed to contact api.github.com yet.', detail: 'A Confluence admin can approve this host in SpecPage settings.' } });
+  await installHarness(page, { loadError: EGRESS_ERROR });
   await page.goto('/macro.html');
-  await expect(page.getByText('SpecPage is not allowed to contact api.github.com yet.')).toBeVisible();
+  await expect(page.getByText("SpecPage isn't allowed to contact api.github.com yet.")).toBeVisible();
+  await expect(page.getByText('A Confluence admin can approve this host in SpecPage settings.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-ready', 'true');
 });
@@ -166,7 +231,7 @@ test('config modal previews a Git source and saves clean config with search text
 
   await page.getByRole('tab', { name: 'Display' }).click();
   await page.getByRole('checkbox', { name: 'refunds' }).check();
-  await expect(page.getByText('Showing 1 of 3 operations.')).toBeVisible();
+  await expect(page.getByText('Showing 1 of 4 operations.')).toBeVisible();
   await page.getByRole('button', { name: 'Save' }).click();
 
   const submitted = await page.evaluate(() => (window as unknown as { __SPECPAGE_SUBMITTED__: { config: Record<string, unknown> } }).__SPECPAGE_SUBMITTED__);
@@ -219,4 +284,126 @@ test('admin page lists connections and approves the Git host on save', async ({ 
   expect(await cspViolations(page)).toEqual([]);
   expect(errors).toEqual([]);
   await page.screenshot({ path: 'test-results/admin.png', fullPage: true });
+});
+
+test('"Try it out" uses the server URL override', async ({ page }) => {
+  await installHarness(page, { tryItOut: true, config: { tryItOut: true, serverUrl: 'https://staging.example.com/v2' } });
+  await page.goto('/macro.html');
+  const op = page.locator('.opblock-get').first();
+  await op.locator('.opblock-summary').click();
+  await op.getByRole('button', { name: 'Try it out' }).click();
+  await op.getByRole('button', { name: 'Execute' }).click();
+  await expect(op.locator('.response-col_status').filter({ hasText: '200' }).first()).toBeVisible();
+  const [proxied] = await proxyCalls(page);
+  expect(proxied?.payload.request?.url).toBe('https://staging.example.com/v2/payments');
+});
+
+test('"Try it out" sends multipart uploads as bytes and shows binary responses', async ({ page }) => {
+  const errors = await installHarness(page, { tryItOut: true, config: { tryItOut: true } });
+  await page.goto('/macro.html');
+  const op = page.locator('.opblock-post', { hasText: '/receipts' });
+  await op.locator('.opblock-summary').click();
+  await op.getByRole('button', { name: 'Try it out' }).click();
+  await op.locator('input[type=file]').setInputFiles({ name: 'receipt.txt', mimeType: 'text/plain', buffer: Buffer.from('hello receipt') });
+  await op.getByRole('button', { name: 'Execute' }).click();
+  await expect(op.locator('.response-col_status').filter({ hasText: '200' }).first()).toBeVisible();
+  // Swagger UI renders image responses as an <img> from a blob: URL.
+  await expect(op.locator('.response-col_description img').first()).toBeVisible();
+
+  const [proxied] = await proxyCalls(page);
+  const request = proxied?.payload.request;
+  expect(request?.body).toBeUndefined();
+  const contentType = Object.entries(request?.headers ?? {}).find(([k]) => k.toLowerCase() === 'content-type')?.[1];
+  expect(contentType).toMatch(/^multipart\/form-data; boundary=/);
+  const sent = Buffer.from(request?.bodyBase64 ?? '', 'base64').toString('utf8');
+  expect(sent).toContain('filename="receipt.txt"');
+  expect(sent).toContain('hello receipt');
+  expect(await cspViolations(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('macro tells readers when relative servers block "Try it out"', async ({ page }) => {
+  await installHarness(page, {
+    tryItOut: true,
+    config: { tryItOut: true },
+    meta: {
+      serversResolvable: false,
+      warnings: [
+        { key: 'warnings.relativeServers', message: 'relative' },
+        { key: 'warnings.mergedFiles', params: { count: 2 }, message: 'Merged 2 files referenced with $ref.' },
+      ],
+    },
+  });
+  await page.goto('/macro.html');
+  await expect(page.getByText("The spec's server URLs are relative", { exact: false })).toBeVisible();
+  // Maintenance notes are for editors only.
+  await expect(page.getByText('Merged 2 files', { exact: false })).toHaveCount(0);
+});
+
+test('macro flags stale search text while the page is being edited', async ({ page }) => {
+  await installHarness(page, { isEditing: true, config: { sourceType: 'git', searchText: 'Payments API · v2.4.0 · GET /payments' } });
+  await page.goto('/macro.html');
+  await expect(page.locator('.opblock-summary-path').first()).toBeVisible();
+  await expect(page.getByText('Confluence search still uses the old endpoint list', { exact: false })).toBeVisible();
+});
+
+test('macro does not flag search text that matches the spec', async ({ page }) => {
+  const config = { sourceType: 'git', includeTags: ['refunds'] };
+  const searchText = buildSearchText(summarizeSpec(filterSpec(SPEC, config), 'openapi-3.1'));
+  await installHarness(page, { isEditing: true, config: { ...config, searchText } });
+  await page.goto('/macro.html');
+  // /refunds is deprecated, which Swagger UI renders with a different path class.
+  await expect(page.locator('.opblock-summary').first()).toBeVisible();
+  await expect(page.getByText('Confluence search still uses', { exact: false })).toHaveCount(0);
+});
+
+test('UI and backend errors follow the user\'s language', async ({ page }) => {
+  const de = catalog('de-DE');
+  await installHarness(page, { loadError: EGRESS_ERROR, translations: { locale: 'de-DE', translations: de } });
+  await page.goto('/macro.html');
+  const errors = de.errors as Record<string, string>;
+  const common = (de.ui as Record<string, Record<string, string>>).common;
+  await expect(page.getByText(errors.egressNotApproved.replace('{host}', 'api.github.com'))).toBeVisible();
+  await expect(page.getByRole('button', { name: common.retry })).toBeVisible();
+});
+
+test('config modal saves a server URL and validates it', async ({ page }) => {
+  await installHarness(page, { config: { sourceType: 'attachment', attachment: 'openapi.yaml', tryItOut: true } });
+  await page.goto('/config.html');
+  await expect(page.locator('.sp-config-preview .opblock-summary-path').first()).toBeVisible();
+  await page.getByRole('tab', { name: 'Display' }).click();
+  const field = page.getByLabel('Server URL for "Try it out" (optional)');
+  await field.fill('http://insecure.example.com');
+  await expect(page.getByText('Enter a full URL starting with https://')).toBeVisible();
+  await page.getByRole('button', { name: 'Save' }).click();
+  expect(await page.evaluate(() => (window as unknown as { __SPECPAGE_SUBMITTED__?: unknown }).__SPECPAGE_SUBMITTED__)).toBeUndefined();
+
+  await field.fill('https://staging.example.com');
+  await page.getByRole('button', { name: 'Save' }).click();
+  const submitted = await page.evaluate(() => (window as unknown as { __SPECPAGE_SUBMITTED__: { config: Record<string, unknown> } }).__SPECPAGE_SUBMITTED__);
+  expect(submitted.config).toMatchObject({ serverUrl: 'https://staging.example.com', tryItOut: true });
+});
+
+test('admin activity log lists changes and records host approvals', async ({ page }) => {
+  const errors = await installHarness(page, {
+    audit: [
+      { at: '2026-09-30T10:00:00Z', accountId: 'a1', displayName: 'Robin Admin', action: 'connection.update', target: 'Acme GitHub', changes: ['repos', 'token'] },
+      { at: '2026-09-29T10:00:00Z', accountId: 'a2', action: 'host.approve', target: 'https://api.example.com', changes: ['apis'] },
+    ],
+  });
+  await page.goto('/admin.html');
+  const activity = page.getByRole('region', { name: 'Activity' });
+  await expect(activity.getByText('Updated connection: Acme GitHub: repos, token')).toBeVisible();
+  await expect(activity.getByText('Robin Admin')).toBeVisible();
+  await expect(activity.getByText('Approved host: https://api.example.com (API hosts for "Try it out")')).toBeVisible();
+
+  await page.getByLabel('Add to Spec hosts').fill('specs.example.com');
+  await page.getByLabel('Add to Spec hosts').press('Enter');
+  await expect(page.locator('code', { hasText: 'https://specs.example.com' })).toBeVisible();
+  const calls = await page.evaluate(() => (window as unknown as { __SPECPAGE_CALLS__: Array<{ fn: string; payload: unknown }> }).__SPECPAGE_CALLS__);
+  expect(calls.filter((c) => c.fn === 'adminRecordHostChange').map((c) => c.payload)).toEqual([
+    { action: 'host.approve', host: 'https://specs.example.com', group: 'specs' },
+  ]);
+  expect(await cspViolations(page)).toEqual([]);
+  expect(errors).toEqual([]);
 });

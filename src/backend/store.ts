@@ -69,3 +69,18 @@ export async function bumpCacheGeneration(): Promise<number> {
   await kvs.set(KEYS.cacheGeneration, next);
   return next;
 }
+
+// Per-repository generation, bumped by Git webhooks so cached specs from that
+// repo are ignored right away.
+const repoGenerationKey = (connectionId: string, repo: string) =>
+  `repo-generation:${connectionId}:${repo.toLowerCase().replace(/[^a-z0-9._:\s#-]/g, '_')}`;
+
+export async function getRepoGeneration(connectionId: string, repo: string): Promise<number> {
+  return (await kvs.get<number>(repoGenerationKey(connectionId, repo))) ?? 0;
+}
+
+export async function bumpRepoGeneration(connectionId: string, repo: string): Promise<number> {
+  const next = (await getRepoGeneration(connectionId, repo)) + 1;
+  await kvs.set(repoGenerationKey(connectionId, repo), next);
+  return next;
+}
