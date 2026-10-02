@@ -6,7 +6,21 @@ export const KIND_LABELS: Record<SpecKind, string> = {
   'openapi-3.1': 'OpenAPI 3.1',
   'openapi-3.2': 'OpenAPI 3.2',
   'swagger-2.0': 'Swagger 2.0',
+  'asyncapi-2': 'AsyncAPI 2',
+  'asyncapi-3': 'AsyncAPI 3',
 };
+
+/**
+ * AsyncAPI specs arrive as the parser's stringified document, which carries
+ * `x-parser-*` bookkeeping. Strip it so downloads look like the source.
+ */
+export function withoutParserExtensions(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutParserExtensions);
+  if (typeof value !== 'object' || value === null) return value;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value)) if (!k.startsWith('x-parser-')) out[k] = withoutParserExtensions(v);
+  return out;
+}
 
 export function relativeTime(t: Translate, iso: string, locale?: string, now = Date.now()): string {
   const seconds = Math.round((now - Date.parse(iso)) / 1000);

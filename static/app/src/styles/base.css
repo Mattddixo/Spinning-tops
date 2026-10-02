@@ -489,3 +489,18 @@ textarea.sp-input {
   padding: var(--sp-space-200);
   color: var(--sp-text-subtle);
 }
+
+.sp-link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sp-link);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.sp-link-button:focus-visible {
+  outline: 2px solid var(--ds-border-focused, #388bff);
+  outline-offset: 2px;
+}

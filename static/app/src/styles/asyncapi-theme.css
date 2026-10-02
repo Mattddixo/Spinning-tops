@@ -1,0 +1,38 @@
+/* @asyncapi/react-component tweaks: fonts, spacing and dark mode (html[data-color-mode]). */
+.sp-asyncapi .aui-root {
+  font-family: var(--sp-font);
+  color: var(--sp-text);
+}
+
+.sp-asyncapi .aui-root .container\:base {
+  padding: 0;
+}
+
+html[data-color-mode='dark'] .sp-asyncapi .aui-root .bg-white,
+html[data-color-mode='dark'] .sp-asyncapi .aui-root .bg-gray-100 {
+  background-color: var(--ds-surface-raised, #22272b);
+}
+
+html[data-color-mode='dark'] .sp-asyncapi .aui-root .bg-gray-200 {
+  background-color: var(--ds-background-neutral, #a1bdd914);
+}
+
+html[data-color-mode='dark'] .sp-asyncapi .aui-root .text-gray-900,
+html[data-color-mode='dark'] .sp-asyncapi .aui-root .text-gray-800,
+html[data-color-mode='dark'] .sp-asyncapi .aui-root .text-gray-700 {
+  color: var(--ds-text, #b6c2cf);
+}
+
+html[data-color-mode='dark'] .sp-asyncapi .aui-root .text-gray-600,
+html[data-color-mode='dark'] .sp-asyncapi .aui-root .text-gray-500 {
+  color: var(--ds-text-subtle, #9fadbc);
+}
+
+html[data-color-mode='dark'] .sp-asyncapi .aui-root .border-gray-400 {
+  border-color: var(--ds-border, #a6c5e229);
+}
+
+html[data-color-mode='dark'] .sp-asyncapi .aui-root .prose,
+html[data-color-mode='dark'] .sp-asyncapi .aui-root .prose * {
+  color: var(--ds-text, #b6c2cf);
+}

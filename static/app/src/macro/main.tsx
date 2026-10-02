@@ -5,9 +5,10 @@ import { buildSearchText, filterSpec, summarizeSpec } from '../../../../src/shar
 import type { AppError, LoadSpecResponse, MacroConfig } from '../../../../src/shared/types';
 import { call, invoke, toAppError } from '../api';
 import { mount } from '../bootstrap';
-import { ApiDocs } from '../components/ApiDocs';
+import { SpecView } from '../components/SpecView';
 import { Button, ErrorMessage, Loading, Message } from '../components/ui';
-import { downloadJson, KIND_LABELS, relativeTime, slugify } from '../format';
+import { downloadJson, KIND_LABELS, relativeTime, slugify, withoutParserExtensions } from '../format';
+import { isAsyncApi } from '../../../../src/shared/spec';
 import { noticeText, useI18n } from '../i18n';
 import { decodeSpec } from '../spec-transport';
 import '../styles/macro.css';
@@ -126,7 +127,11 @@ function MacroApp() {
           <Button
             compact
             appearance="subtle"
-            onClick={() => downloadJson(`${slugify(data.summary.title)}.openapi.json`, spec)}
+            onClick={() =>
+              isAsyncApi(data.summary.kind)
+                ? downloadJson(`${slugify(data.summary.title)}.asyncapi.json`, withoutParserExtensions(spec))
+                : downloadJson(`${slugify(data.summary.title)}.openapi.json`, spec)
+            }
             title={t('ui.macro.downloadTitle')}
           >
             {t('ui.macro.download')}
@@ -152,7 +157,8 @@ function MacroApp() {
         {' · '}
         {sourceDetails.join(' · ')}
       </p>
-      {searchStale ? <Message appearance="info">{t('ui.macro.staleSearch')}</Message> : null}
+      {isEditing && data.meta.autoConverted ? <Message appearance="info">{t('ui.macro.autoConverted')}</Message> : null}
+      {searchStale && !data.meta.autoConverted ? <Message appearance="info">{t('ui.macro.staleSearch')}</Message> : null}
       {warnings.length ? (
         <Message appearance="warning">
           {warnings.map((w) => (
@@ -161,7 +167,7 @@ function MacroApp() {
         </Message>
       ) : null}
       <div className={maxHeight ? 'sp-macro-scroll' : undefined} style={maxHeight ? { maxHeight } : undefined}>
-        <ApiDocs spec={spec} config={config} tryItOutAllowed={data.tryItOutAllowed} />
+        <SpecView kind={data.summary.kind} spec={spec} config={config} tryItOutAllowed={data.tryItOutAllowed} />
       </div>
     </div>
   );

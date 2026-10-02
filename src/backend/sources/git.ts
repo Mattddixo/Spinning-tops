@@ -1,4 +1,6 @@
 import {
+  azureItemUrl,
+  azureVersionTypeFor,
   bitbucketRefUrl,
   bitbucketRepoUrl,
   bitbucketSrcUrl,
@@ -8,7 +10,11 @@ import {
   isValidRepo,
   normaliseRepoPath,
   repoAllowed,
+  swaggerhubApiUrl,
+  swaggerhubDefaultVersionUrl,
+  usesFilePath,
   webFileUrl,
+  type AzureVersionType,
 } from '../../shared/git';
 import type { GitConnection } from '../../shared/types';
 import type { SecureContext } from '../context';
@@ -36,18 +42,23 @@ function authHeaders(connection: GitConnection, token: string | undefined): Reco
       const user = connection.username ?? '';
       return { Authorization: `Basic ${Buffer.from(`${user}:${token}`).toString('base64')}` };
     }
+    case 'pat':
+      return { Authorization: `Basic ${Buffer.from(`:${token}`).toString('base64')}` };
   }
 }
 
+// SwaggerHub has no files; this name only gives the bundler a base URL.
+const SWAGGERHUB_ROOT = 'swaggerhub.json';
+
 /** Validate a page editor's Git selection against the admin's connection rules. */
 export async function resolveGitTarget(ctx: SecureContext, target: GitTarget, options: { skipSpaceCheck?: boolean } = {}) {
-  if (!target.connectionId || !target.repo || !target.path) {
-    fail('NOT_CONFIGURED', 'errors.gitNotConfigured');
-  }
+  if (!target.connectionId || !target.repo) fail('NOT_CONFIGURED', 'errors.gitNotConfigured');
   const connection = await getConnection(target.connectionId as string);
   if (!connection) {
     return fail('NOT_FOUND', 'errors.gitConnectionMissing', undefined, { hint: 'hints.restoreConnection' });
   }
+  const needsPath = usesFilePath(connection.provider);
+  if (needsPath && !target.path) fail('NOT_CONFIGURED', 'errors.gitNotConfigured');
   if (!options.skipSpaceCheck && connection.spaceKeys.length && (!ctx.spaceKey || !connection.spaceKeys.includes(ctx.spaceKey))) {
     fail('FORBIDDEN', 'errors.gitConnectionSpace', { name: connection.name });
   }
@@ -56,7 +67,7 @@ export async function resolveGitTarget(ctx: SecureContext, target: GitTarget, op
   if (!repoAllowed(repo, connection.repos)) {
     fail('FORBIDDEN', 'errors.gitRepoNotAllowed', { repo, name: connection.name }, { hint: 'hints.askAdminAddRepo' });
   }
-  const path = normaliseRepoPath(target.path as string);
+  const path = needsPath ? normaliseRepoPath(target.path as string) : SWAGGERHUB_ROOT;
   if (!path) fail('BAD_REQUEST', 'errors.gitPathInvalid');
   const ref = (target.ref ?? '').trim() || connection.defaultRef?.trim() || '';
   if (ref && !isValidRef(ref)) fail('BAD_REQUEST', 'errors.gitRefInvalid', { ref });
@@ -96,6 +107,34 @@ export async function gitSource(
   }
   const headers = authHeaders(connection, token);
   let bitbucketCommit: string | undefined;
+  let azureVersionType: AzureVersionType | undefined;
+
+  // Azure DevOps needs to be told whether a ref is a branch, tag or commit.
+  // SHAs are obvious; otherwise try it as a branch, then as a tag.
+  async function readAzure(filePath: string, what: string) {
+    const candidates: AzureVersionType[] = azureVersionType ? [azureVersionType] : ref ? [azureVersionTypeFor(ref), 'tag'] : ['branch'];
+    for (const [i, versionType] of [...new Set(candidates)].entries()) {
+      const res = await externalFetch(azureItemUrl(connection.apiBaseUrl, repo, filePath, ref || undefined, versionType), {
+        headers: { ...headers, Accept: 'application/octet-stream' },
+      });
+      const last = i === new Set(candidates).size - 1;
+      // A missing branch comes back as 404 (or 400 on some versions); only then try a tag.
+      if (!last && ref && (res.status === 404 || res.status === 400)) continue;
+      if (res.status !== 200) upstreamError(what, res.status, res.statusText);
+      azureVersionType = versionType;
+      return res;
+    }
+    return fail('NOT_FOUND', 'errors.gitRefNotFound', { ref, repo });
+  }
+
+  async function swaggerhubVersion(): Promise<string> {
+    if (ref) return ref;
+    const res = await externalFetch(swaggerhubDefaultVersionUrl(connection.apiBaseUrl, repo), { headers: { ...headers, Accept: 'application/json' } });
+    if (res.status !== 200) upstreamError(repo, res.status, res.statusText);
+    const version = (JSON.parse(res.text) as { version?: string }).version;
+    if (!version) fail('NOT_FOUND', 'errors.swaggerhubNoDefault', { repo });
+    return version as string;
+  }
 
   async function readFile(filePath: string): Promise<string> {
     const what = `${repo}/${filePath}`;
@@ -113,20 +152,35 @@ export async function gitSource(
         bitbucketCommit ??= await resolveBitbucketCommit(connection, headers, repo, ref);
         url = bitbucketSrcUrl(connection.apiBaseUrl, repo, bitbucketCommit, filePath);
         break;
+      case 'azure': {
+        const res = await readAzure(filePath, what);
+        if (res.truncated) fail('TOO_LARGE', 'errors.fileTooLarge', { name: what, size: MAX_SOURCE_BYTES / MB });
+        return res.text;
+      }
+      case 'swaggerhub':
+        url = swaggerhubApiUrl(connection.apiBaseUrl, repo, await swaggerhubVersion());
+        extra = { Accept: 'application/json' };
+        break;
     }
     const res = await externalFetch(url, { headers: { ...headers, ...extra } });
-    if (res.status !== 200) upstreamError(what, res.status, res.statusText);
+    if (res.status !== 200) upstreamError(connection.provider === 'swaggerhub' ? repo : what, res.status, res.statusText);
     if (res.truncated) fail('TOO_LARGE', 'errors.fileTooLarge', { name: what, size: MAX_SOURCE_BYTES / MB });
     return res.text;
   }
 
+  const isSwaggerhub = connection.provider === 'swaggerhub';
   return {
-    label: `${repo}${ref ? `@${ref}` : ''}: ${path}`,
+    label: isSwaggerhub ? `${repo}${ref ? ` ${ref}` : ''}` : `${repo}${ref ? `@${ref}` : ''}: ${path}`,
     link: webFileUrl(connection.provider, connection.webBaseUrl, repo, path, ref || undefined),
     // The repo generation is bumped by Git webhooks, which invalidates cached copies immediately.
     cacheKey: JSON.stringify(['git', connection.id, connection.updatedAt, await getRepoGeneration(connection.id, repo), repo, ref, path]),
     baseUrl: syntheticUrl('repo', path),
     async read(url: string) {
+      // SwaggerHub returns the resolved definition, so there are no other files to fetch.
+      if (isSwaggerhub) {
+        if (syntheticPath(url) !== SWAGGERHUB_ROOT) fail('BAD_REQUEST', 'errors.refUnsupported', { ref: syntheticPath(url) });
+        return readFile(SWAGGERHUB_ROOT);
+      }
       const filePath = normaliseRepoPath(syntheticPath(url));
       if (!filePath) fail('BAD_REQUEST', 'errors.gitRefOutsideRepo', { ref: syntheticPath(url) });
       return readFile(filePath as string);

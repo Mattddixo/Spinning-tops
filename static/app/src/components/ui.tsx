@@ -100,7 +100,7 @@ export function Message({
 
 export function ErrorMessage({ error, actions }: { error: AppError; actions?: ReactNode }) {
   const t = useT();
-  const appearance = error.code === 'NOT_CONFIGURED' ? 'info' : error.code === 'EGRESS_NOT_APPROVED' || error.code === 'SOURCE_DISABLED' ? 'warning' : 'error';
+  const appearance = error.code === 'NOT_CONFIGURED' ? 'info' : ['EGRESS_NOT_APPROVED', 'SOURCE_DISABLED', 'CONFLICT'].includes(error.code) ? 'warning' : 'error';
   const { title, hint } = errorText(t, error);
   return (
     <Message appearance={appearance} title={title} actions={actions}>

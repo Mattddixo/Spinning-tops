@@ -43,7 +43,7 @@ export interface MacroConfig {
   searchText?: string;
 }
 
-export type SpecKind = 'openapi-3.0' | 'openapi-3.1' | 'openapi-3.2' | 'swagger-2.0';
+export type SpecKind = 'openapi-3.0' | 'openapi-3.1' | 'openapi-3.2' | 'swagger-2.0' | 'asyncapi-2' | 'asyncapi-3';
 
 export interface OperationSummary {
   method: string;
@@ -73,6 +73,8 @@ export interface LoadedSpecMeta {
   /** Number of files merged when resolving relative `$ref`s. */
   fileCount: number;
   warnings: Notice[];
+  /** Set when the settings were worked out from a pasted link and haven't been saved yet. */
+  autoConverted?: MacroConfig;
   /** False when servers are relative and couldn't be resolved, so Try it out needs a server override. */
   serversResolvable: boolean;
 }
@@ -89,6 +91,7 @@ export type ErrorCode =
   | 'TOO_LARGE'
   | 'UPSTREAM_ERROR'
   | 'BAD_REQUEST'
+  | 'CONFLICT'
   | 'INTERNAL';
 
 export type MessageParams = Record<string, string | number>;
@@ -124,9 +127,11 @@ export interface LoadSpecResponse {
   tryItOutAllowed: boolean;
 }
 
-export type GitProvider = 'github' | 'gitlab' | 'bitbucket';
+/** Where a connection reads specs from. SwaggerHub isn't Git, but it fits the same connection model. */
+export type GitProvider = 'github' | 'gitlab' | 'bitbucket' | 'azure' | 'swaggerhub';
 
-export type GitAuthType = 'bearer' | 'basic' | 'private-token' | 'none';
+/** `pat` is Basic auth with an empty username, which is how Azure DevOps takes personal access tokens. */
+export type GitAuthType = 'bearer' | 'basic' | 'private-token' | 'pat' | 'none';
 
 /** Connection metadata. The token itself lives only in Forge secret storage. */
 export interface GitConnection {
@@ -185,6 +190,8 @@ export interface ConnectionOption {
   id: string;
   name: string;
   provider: GitProvider;
+  /** Host of the web URL, used to match pasted links (github.com vs a GitHub Enterprise host). */
+  webHost: string;
   repos: string[];
   defaultRef?: string;
 }
@@ -233,7 +240,30 @@ export interface AuditEntryView extends AuditEntry {
   displayName?: string;
 }
 
+/** One API doc macro, as stored in the space registry (backend/catalog.ts). */
+export interface ApiEntry {
+  spaceId: string;
+  contentId: string;
+  contentType: 'page' | 'blogpost';
+  localId: string;
+  title: string;
+  version: string;
+  kind: SpecKind;
+  operationCount: number;
+  sourceType: SourceType;
+  /** Where the spec comes from (file name, repo path, URL); empty for pasted specs. */
+  sourceLabel: string;
+  fingerprint: string;
+  updatedAt: string;
+}
+
+export interface ApiListItem extends ApiEntry {
+  pageTitle: string;
+}
+
 export interface AttachmentOption {
+  /** Current version number, used to warn about overwriting someone else's change. */
+  version?: number;
   title: string;
   mediaType?: string;
   fileSize?: number;

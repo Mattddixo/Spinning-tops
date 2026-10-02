@@ -45,8 +45,16 @@ export function parseSpecText(text: string): Result<JsonObject> {
   }
 }
 
-// Same version checks Swagger UI uses.
+export const isAsyncApi = (kind: SpecKind) => kind === 'asyncapi-2' || kind === 'asyncapi-3';
+
+// Same version checks Swagger UI uses. AsyncAPI 2.x and 3.x are what the
+// AsyncAPI parser and React renderer support.
 export function detectKind(spec: JsonObject): SpecKind | undefined {
+  if (typeof spec.asyncapi === 'string') {
+    if (/^2\.\d+\.\d+$/.test(spec.asyncapi)) return 'asyncapi-2';
+    if (/^3\.\d+\.\d+$/.test(spec.asyncapi)) return 'asyncapi-3';
+    return undefined;
+  }
   const openapi = spec.openapi;
   if (typeof openapi === 'string') {
     if (/^3\.0\.\d+$/.test(openapi)) return 'openapi-3.0';
@@ -59,16 +67,14 @@ export function detectKind(spec: JsonObject): SpecKind | undefined {
 }
 
 export function validateSpecShape(spec: JsonObject): Result<SpecKind> {
-  if (typeof spec.asyncapi === 'string') {
-    return { ok: false, error: appError('UNSUPPORTED_SPEC', 'errors.specAsyncApi') };
-  }
   const kind = detectKind(spec);
   if (!kind) {
-    const found = typeof spec.openapi === 'string' ? `openapi: ${spec.openapi}` : undefined;
+    const found =
+      typeof spec.openapi === 'string' ? `openapi: ${spec.openapi}` : typeof spec.asyncapi === 'string' ? `asyncapi: ${spec.asyncapi}` : undefined;
     return {
       ok: false,
       error: appError('UNSUPPORTED_SPEC', 'errors.specUnsupported', undefined, {
-        detail: found ?? 'Expected a top-level "openapi" or "swagger: \'2.0\'" field.',
+        detail: found ?? 'Expected a top-level "openapi", "asyncapi" or "swagger: \'2.0\'" field.',
       }),
     };
   }
@@ -79,6 +85,18 @@ export function validateSpecShape(spec: JsonObject): Result<SpecKind> {
 }
 
 function serverUrls(spec: JsonObject, kind: SpecKind): string[] {
+  if (isAsyncApi(kind)) {
+    // 2.x: servers.{name}.url, 3.x: servers.{name}.host + pathname. Both have protocol.
+    if (!isObject(spec.servers)) return [];
+    return Object.values(spec.servers)
+      .filter(isObject)
+      .map((s) => {
+        const protocol = typeof s.protocol === 'string' ? s.protocol : '';
+        const address = typeof s.url === 'string' ? s.url : `${typeof s.host === 'string' ? s.host : ''}${typeof s.pathname === 'string' ? s.pathname : ''}`;
+        return address && protocol && !address.includes('://') ? `${protocol}://${address}` : address;
+      })
+      .filter(Boolean);
+  }
   if (kind === 'swagger-2.0') {
     if (typeof spec.host !== 'string') return [];
     const schemes = Array.isArray(spec.schemes) && spec.schemes.length ? spec.schemes : ['https'];
@@ -90,6 +108,64 @@ function serverUrls(spec: JsonObject, kind: SpecKind): string[] {
     .filter(isObject)
     .map((s) => s.url)
     .filter((u): u is string => typeof u === 'string');
+}
+
+const tagNames = (value: unknown) =>
+  Array.isArray(value) ? value.filter(isObject).map((t) => t.name).filter((n): n is string => typeof n === 'string') : [];
+
+const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
+
+// Local refs only (the bundler has already inlined everything else).
+function deref(spec: JsonObject, value: unknown): unknown {
+  if (!isObject(value) || typeof value.$ref !== 'string' || !value.$ref.startsWith('#/')) return value;
+  let node: unknown = spec;
+  for (const part of value.$ref.slice(2).split('/')) {
+    if (!isObject(node)) return undefined;
+    node = node[part.replace(/~1/g, '/').replace(/~0/g, '~')];
+  }
+  return node;
+}
+
+// AsyncAPI operations in the same shape as HTTP ones: method is the action
+// (SEND/RECEIVE in 3.x, PUBLISH/SUBSCRIBE in 2.x), path is the channel address.
+function listAsyncOperations(spec: JsonObject, kind: SpecKind): OperationSummary[] {
+  const ops: OperationSummary[] = [];
+  const channels = isObject(spec.channels) ? spec.channels : {};
+  if (kind === 'asyncapi-2') {
+    for (const [name, channel] of Object.entries(channels)) {
+      if (!isObject(channel)) continue;
+      for (const action of ['publish', 'subscribe'] as const) {
+        const op = channel[action];
+        if (!isObject(op)) continue;
+        ops.push({
+          method: action.toUpperCase(),
+          path: name,
+          summary: text(op.summary),
+          operationId: text(op.operationId),
+          tags: tagNames(op.tags),
+          deprecated: false,
+        });
+      }
+    }
+    return ops;
+  }
+  const operations = isObject(spec.operations) ? spec.operations : {};
+  for (const [id, raw] of Object.entries(operations)) {
+    const op = deref(spec, raw);
+    if (!isObject(op)) continue;
+    const channel = deref(spec, op.channel);
+    const address = isObject(channel) ? (text(channel.address) ?? '') : '';
+    const channelKey = isObject(op.channel) && typeof op.channel.$ref === 'string' ? op.channel.$ref.split('/').pop() : undefined;
+    ops.push({
+      method: (text(op.action) ?? 'send').toUpperCase(),
+      path: address || channelKey || id,
+      summary: text(op.summary) ?? text(op.title),
+      operationId: id,
+      tags: tagNames(op.tags),
+      deprecated: false,
+    });
+  }
+  return ops;
 }
 
 export function listOperations(spec: JsonObject): OperationSummary[] {
@@ -115,10 +191,9 @@ export function listOperations(spec: JsonObject): OperationSummary[] {
 
 export function summarizeSpec(spec: JsonObject, kind: SpecKind): SpecSummary {
   const info = isObject(spec.info) ? spec.info : {};
-  const operations = listOperations(spec);
-  const declaredTags = Array.isArray(spec.tags)
-    ? spec.tags.filter(isObject).map((t) => t.name).filter((n): n is string => typeof n === 'string')
-    : [];
+  const operations = isAsyncApi(kind) ? listAsyncOperations(spec, kind) : listOperations(spec);
+  // AsyncAPI 3 moved document tags into info.
+  const declaredTags = tagNames(kind === 'asyncapi-3' ? info.tags : spec.tags);
   const usedTags = operations.flatMap((o) => o.tags);
   const tags = [...new Set([...declaredTags, ...usedTags])];
   return {
@@ -151,6 +226,8 @@ function pathMatches(path: string, prefixes: string[]): boolean {
 // Keep only operations matching the tag/path filters. Empty paths and unused
 // tags are dropped; components are left alone so $refs still resolve.
 export function filterSpec<T extends JsonObject>(spec: T, options: FilterOptions): T {
+  // Tag/path filters are an OpenAPI feature; AsyncAPI documents are shown whole.
+  if (typeof spec.asyncapi === 'string') return spec;
   const tags = (options.includeTags ?? []).filter(Boolean);
   const prefixes = (options.includePaths ?? []).filter((p) => p.trim());
   const hideDeprecated = options.hideDeprecated === true;
@@ -232,6 +309,8 @@ export interface ServerResolution {
  * server override.
  */
 export function resolveServers(spec: JsonObject, kind: SpecKind, specUrl?: string): ServerResolution {
+  // AsyncAPI servers are brokers, not HTTP bases, and there's no Try it out for them.
+  if (isAsyncApi(kind)) return { spec, resolvable: true };
   let base: URL | undefined;
   try {
     base = specUrl ? new URL(specUrl) : undefined;
@@ -300,7 +379,7 @@ export function resolveServers(spec: JsonObject, kind: SpecKind, specUrl?: strin
 /** Point every operation at one server, e.g. a staging URL chosen in the macro settings. */
 export function applyServerOverride<T extends JsonObject>(spec: T, kind: SpecKind, serverUrl: string | undefined): T {
   const url = serverUrl?.trim();
-  if (!url) return spec;
+  if (!url || isAsyncApi(kind)) return spec;
 
   if (kind === 'swagger-2.0') {
     let parsed: URL;

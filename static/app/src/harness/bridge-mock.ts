@@ -2,9 +2,16 @@
 // Tests configure it through window.__SPECPAGE_HARNESS__.
 type Handler = (payload: unknown) => unknown;
 
+type ConfluenceHandler = (path: string, init: { method: string; fields: Record<string, string>; files: Record<string, { name: string; type: string; text: string }> }) => {
+  status: number;
+  body?: unknown;
+};
+
 interface HarnessConfig {
   context?: Record<string, unknown>;
   resolvers?: Record<string, Handler>;
+  /** Stands in for the Confluence REST API behind requestConfluence (uploads). */
+  confluence?: ConfluenceHandler;
   egress?: Array<{ key: string; description: string; configured: Array<{ domain: string; type: string[] }> }>;
 }
 
@@ -13,6 +20,7 @@ declare global {
     __SPECPAGE_HARNESS__?: HarnessConfig;
     __SPECPAGE_CALLS__?: Array<{ fn: string; payload: unknown }>;
     __SPECPAGE_SUBMITTED__?: unknown;
+    __SPECPAGE_CONFLUENCE__?: Array<{ path: string; method: string; headers: Record<string, string>; fields: Record<string, string>; files: Record<string, { name: string; type: string; text: string }> }>;
   }
 }
 
@@ -26,6 +34,23 @@ export async function invoke(functionKey: string, payload?: unknown) {
 }
 
 export const makeInvoke = () => invoke;
+
+export async function requestConfluence(path: string, init: RequestInit = {}): Promise<Response> {
+  const fields: Record<string, string> = {};
+  const files: Record<string, { name: string; type: string; text: string }> = {};
+  if (init.body instanceof FormData) {
+    for (const [key, value] of init.body.entries()) {
+      if (typeof value === 'string') fields[key] = value;
+      else files[key] = { name: value.name, type: value.type, text: await value.text() };
+    }
+  }
+  const method = (init.method ?? 'GET').toUpperCase();
+  const headers = Object.fromEntries(new Headers(init.headers).entries());
+  (window.__SPECPAGE_CONFLUENCE__ ??= []).push({ path, method, headers, fields, files });
+  const handler = harness().confluence;
+  const result = handler ? handler(path, { method, fields, files }) : { status: 404, body: { message: 'no harness handler' } };
+  return new Response(result.body === undefined ? null : JSON.stringify(result.body), { status: result.status, headers: { 'content-type': 'application/json' } });
+}
 
 export const view = {
   getContext: async () => harness().context ?? { extension: {} },

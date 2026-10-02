@@ -14,6 +14,8 @@ const AUTH_TYPES: Record<GitProvider, GitAuthType[]> = {
   github: ['bearer', 'none'],
   gitlab: ['private-token', 'bearer', 'none'],
   bitbucket: ['bearer', 'basic', 'none'],
+  azure: ['pat', 'none'],
+  swaggerhub: ['bearer', 'none'],
 };
 
 function cleanList(values: unknown, max: number): string[] {
@@ -25,14 +27,15 @@ function validateRepoPattern(provider: GitProvider, pattern: string): boolean {
   if (pattern === '*') return true;
   if (pattern.endsWith('/*')) {
     const owner = pattern.slice(0, -2);
-    return owner.split('/').every((s) => /^[A-Za-z0-9._-]+$/.test(s) && s !== '.' && s !== '..');
+    const segment = provider === 'azure' ? /^[A-Za-z0-9._ -]+$/ : /^[A-Za-z0-9._-]+$/;
+    return owner.split('/').every((s) => segment.test(s) && s.trim() === s && s !== '.' && s !== '..');
   }
   return isValidRepo(provider, pattern);
 }
 
 export async function saveConnection(input: GitConnectionInput): Promise<{ connection: GitConnection; changes: string[]; created: boolean }> {
   const provider = input.provider;
-  if (!['github', 'gitlab', 'bitbucket'].includes(provider)) fail('BAD_REQUEST', 'errors.providerRequired');
+  if (!(provider in AUTH_TYPES)) fail('BAD_REQUEST', 'errors.providerRequired');
 
   const name = (input.name ?? '').trim();
   if (!name || name.length > 80) fail('BAD_REQUEST', 'errors.connectionNameInvalid');
@@ -113,7 +116,7 @@ export async function deleteConnection(id: string): Promise<GitConnection> {
   return removed as GitConnection;
 }
 
-export async function testConnection(ctx: SecureContext, args: { id: string; repo: string; path: string; ref?: string }) {
+export async function testConnection(ctx: SecureContext, args: { id: string; repo: string; path?: string; ref?: string }) {
   const settings = await getSettings();
   const source = await gitSource(ctx, { connectionId: args.id, repo: args.repo, path: args.path, ref: args.ref }, { skipSpaceCheck: true });
   const bundled = await loadAndBundle(source, { allowExternalUrls: settings.urlSourcesEnabled });

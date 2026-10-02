@@ -49,12 +49,3 @@
   padding: 0 var(--sp-space-150);
 }
 
-.sp-link-button {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--sp-link);
-  font: inherit;
-  cursor: pointer;
-  text-decoration: underline;
-}

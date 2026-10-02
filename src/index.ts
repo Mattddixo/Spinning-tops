@@ -7,10 +7,12 @@ import { requireAdmin } from './backend/auth';
 import { INVOCATION_BUDGET_MS, withBudget } from './backend/budget';
 import { effectiveConfig, isLicensedUser, readContext, requireLicense } from './backend/context';
 import { asResult, fail } from './backend/errors';
+import { listSpaceApis, recordApi } from './backend/catalog';
 import { exportMacro } from './backend/export';
 import { loadSpec } from './backend/loadSpec';
 import { proxyRequest } from './backend/proxy';
-import { listSpecAttachments } from './backend/sources/attachment';
+import { listSpecAttachments, readAttachmentForEditing } from './backend/sources/attachment';
+import { hostOf } from './shared/git';
 import { bumpCacheGeneration, getConnections, getSettings, saveSettings } from './backend/store';
 
 // Every call gets a time budget under Forge's 25 s limit (see budget.ts).
@@ -24,10 +26,29 @@ export const handler = makeResolver<Defs>({
   loadSpec: ({ payload, context }) =>
     run('loadSpec', async () => {
       const ctx = readContext(context);
-      return loadSpec(ctx, effectiveConfig(ctx, payload?.preview), { refresh: payload?.refresh });
+      const config = effectiveConfig(ctx, payload?.preview);
+      const result = await loadSpec(ctx, config, { refresh: payload?.refresh });
+      // Only saved macros go in the space's API list, not previews or unsaved pasted links.
+      if (!payload?.preview && !result.meta.autoConverted) await recordApi(ctx, config, result.summary, result.meta.sourceLabel);
+      return result;
+    }),
+
+  listSpaceApis: ({ context }) =>
+    run('listSpaceApis', async () => {
+      const ctx = readContext(context);
+      requireLicense(ctx);
+      if (!ctx.spaceId) fail('BAD_REQUEST', 'errors.catalogNeedsSpace');
+      return { spaceKey: ctx.spaceKey, apis: await listSpaceApis(ctx, ctx.spaceId as string) };
     }),
 
   listAttachments: ({ context }) => run('listAttachments', () => listSpecAttachments(readContext(context))),
+
+  readAttachment: ({ payload, context }) =>
+    run('readAttachment', async () => {
+      const ctx = readContext(context);
+      requireLicense(ctx);
+      return readAttachmentForEditing(ctx, String(payload?.filename ?? ''));
+    }),
 
   getEditorOptions: ({ context }) =>
     run('getEditorOptions', async () => {
@@ -37,7 +58,14 @@ export const handler = makeResolver<Defs>({
       const [settings, connections] = await Promise.all([getSettings(), getConnections()]);
       const available: ConnectionOption[] = connections
         .filter((c) => !c.spaceKeys.length || (ctx.spaceKey !== undefined && c.spaceKeys.includes(ctx.spaceKey)))
-        .map(({ id, name, provider, repos, defaultRef }) => ({ id, name, provider, repos, ...(defaultRef ? { defaultRef } : {}) }));
+        .map(({ id, name, provider, repos, defaultRef, webBaseUrl }) => ({
+          id,
+          name,
+          provider,
+          repos,
+          webHost: hostOf(webBaseUrl),
+          ...(defaultRef ? { defaultRef } : {}),
+        }));
       return { connections: available, urlSourcesEnabled: settings.urlSourcesEnabled, tryItOutEnabled: settings.tryItOutEnabled };
     }),
 

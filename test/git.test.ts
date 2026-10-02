@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  azureItemUrl,
   bitbucketSrcUrl,
   githubContentsUrl,
   gitlabRawUrl,
   isValidRef,
   isValidRepo,
+  matchConnection,
   normaliseRepoPath,
   parseGitFileLink,
   repoAllowed,
+  swaggerhubApiUrl,
+  swaggerhubDefaultVersionUrl,
   webFileUrl,
 } from '../src/shared/git';
 
@@ -111,5 +115,71 @@ describe('parseGitFileLink', () => {
     expect(parseGitFileLink('http://github.com/a/b/blob/main/x.yaml')).toBeUndefined();
     expect(parseGitFileLink('https://example.com/docs')).toBeUndefined();
     expect(parseGitFileLink('not a url')).toBeUndefined();
+  });
+});
+
+describe('Azure DevOps and SwaggerHub', () => {
+  it('accepts their repository shapes', () => {
+    expect(isValidRepo('azure', 'contoso/Fabrikam Fiber/payments-api')).toBe(true);
+    expect(isValidRepo('azure', 'contoso/payments-api')).toBe(false);
+    expect(isValidRepo('azure', 'contoso/ bad/x')).toBe(false);
+    expect(isValidRepo('swaggerhub', 'acme/payments')).toBe(true);
+    expect(isValidRepo('github', 'acme/has space')).toBe(false);
+  });
+
+  it('builds Azure item URLs with an explicit version type', () => {
+    const url = new URL(azureItemUrl('https://dev.azure.com', 'contoso/Fabrikam Fiber/payments', 'api/openapi.yaml', 'release/1.2', 'tag'));
+    expect(url.pathname).toBe('/contoso/Fabrikam%20Fiber/_apis/git/repositories/payments/items');
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      path: '/api/openapi.yaml',
+      'versionDescriptor.version': 'release/1.2',
+      'versionDescriptor.versionType': 'tag',
+      'api-version': '7.1',
+    });
+    expect(new URL(azureItemUrl('https://dev.azure.com', 'o/p/r', 'a.yaml')).searchParams.has('versionDescriptor.version')).toBe(false);
+  });
+
+  it('builds SwaggerHub URLs', () => {
+    expect(swaggerhubApiUrl('https://api.swaggerhub.com/', 'acme/payments', '1.0.0')).toBe('https://api.swaggerhub.com/apis/acme/payments/1.0.0?resolved=true');
+    expect(swaggerhubDefaultVersionUrl('https://sh.acme.com/v1', 'acme/payments')).toBe('https://sh.acme.com/v1/apis/acme/payments/settings/default');
+  });
+
+  it('parses their web links', () => {
+    expect(parseGitFileLink('https://dev.azure.com/contoso/Fabrikam%20Fiber/_git/payments?path=/api/openapi.yaml&version=GBmain')).toEqual({
+      provider: 'azure',
+      host: 'dev.azure.com',
+      repo: 'contoso/Fabrikam Fiber/payments',
+      ref: 'main',
+      path: 'api/openapi.yaml',
+    });
+    expect(parseGitFileLink('https://dev.azure.com/contoso/proj/_git/repo')).toBeUndefined();
+    expect(parseGitFileLink('https://app.swaggerhub.com/apis/acme/payments/1.2.0')).toEqual({ provider: 'swaggerhub', host: 'app.swaggerhub.com', repo: 'acme/payments', ref: '1.2.0', path: '' });
+    expect(parseGitFileLink('https://app.swaggerhub.com/apis-docs/acme/payments')).toMatchObject({ provider: 'swaggerhub', repo: 'acme/payments', ref: '' });
+  });
+
+  it('links back to the right web pages', () => {
+    expect(webFileUrl('azure', 'https://dev.azure.com', 'contoso/proj/repo', 'openapi.yaml', 'main')).toBe(
+      'https://dev.azure.com/contoso/proj/_git/repo?path=%2Fopenapi.yaml&version=GBmain',
+    );
+    expect(webFileUrl('swaggerhub', 'https://app.swaggerhub.com', 'acme/payments', '', '1.0.0')).toBe('https://app.swaggerhub.com/apis/acme/payments/1.0.0');
+  });
+});
+
+describe('matchConnection', () => {
+  const connections = [
+    { id: 'ghes', provider: 'github' as const, webHost: 'git.acme.com', repos: ['platform/*'] },
+    { id: 'gh', provider: 'github' as const, webHost: 'github.com', repos: ['acme/*'] },
+  ];
+
+  it('needs the same provider, host and an allowed repo', () => {
+    const link = parseGitFileLink('https://github.com/acme/payments/blob/main/openapi.yaml');
+    expect(link && matchConnection(link, connections)?.id).toBe('gh');
+    const enterprise = parseGitFileLink('https://git.acme.com/platform/api/blob/main/openapi.yaml');
+    expect(enterprise && matchConnection(enterprise, connections)?.id).toBe('ghes');
+  });
+
+  it("never loads a github.com link from an Enterprise server with a same-named repo", () => {
+    const link = parseGitFileLink('https://github.com/platform/api/blob/main/openapi.yaml');
+    expect(link && matchConnection(link, connections)).toBeUndefined();
   });
 });

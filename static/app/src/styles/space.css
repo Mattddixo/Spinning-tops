@@ -1,0 +1,16 @@
+.sp-space {
+  padding: var(--sp-space-300) var(--sp-space-300) var(--sp-space-300);
+  max-width: 1200px;
+}
+
+.sp-space-search {
+  max-width: 420px;
+}
+
+.sp-space-version {
+  margin-left: var(--sp-space-100);
+}
+
+.sp-space-source {
+  overflow-wrap: anywhere;
+}

@@ -1,6 +1,6 @@
 import { permissions, view } from '@forge/bridge';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { isValidRef, isValidRepo, normaliseRepoPath, parseGitFileLink, PROVIDERS } from '../../../../src/shared/git';
+import { isValidRef, isValidRepo, matchConnection, normaliseRepoPath, parseGitFileLink, PROVIDERS, usesFilePath } from '../../../../src/shared/git';
 import { buildSearchText, filterSpec, summarizeSpec } from '../../../../src/shared/spec';
 import type { Translate } from '../../../../src/shared/i18n';
 import type {
@@ -15,14 +15,15 @@ import type {
 import { appError } from '../../../../src/shared/messages';
 import { call, invoke, RequestFailed, toAppError } from '../api';
 import { mount } from '../bootstrap';
-import { ApiDocs } from '../components/ApiDocs';
+import { SpecView } from '../components/SpecView';
 import { Button, ErrorMessage, Field, Loading, Message, splitList, Tabs, Toggle } from '../components/ui';
 import { KIND_LABELS, toLanguageTag } from '../format';
+import { AttachmentSource } from './AttachmentSource';
+import { InlineSource, MAX_INLINE } from './InlineSource';
 import { noticeText, useI18n } from '../i18n';
 import { decodeSpec } from '../spec-transport';
 import '../styles/config.css';
 
-const MAX_INLINE = 100_000;
 
 type EditorOptions = { connections: ConnectionOption[]; urlSourcesEnabled: boolean; tryItOutEnabled: boolean };
 
@@ -94,7 +95,7 @@ function validateSource(t: Translate, config: MacroConfig, connections: Connecti
         return t('ui.config.validate.badRepo', { hint: PROVIDERS[connection.provider].repoHint });
       }
       if (config.gitRef && !isValidRef(config.gitRef.trim())) return t('ui.config.validate.badRef');
-      if (!config.gitPath || !normaliseRepoPath(config.gitPath)) return t('ui.config.validate.badPath');
+      if (usesFilePath(connection.provider) && (!config.gitPath || !normaliseRepoPath(config.gitPath))) return t('ui.config.validate.badPath');
       return undefined;
     }
     case 'url':
@@ -121,6 +122,12 @@ function ConfigApp() {
   const [tab, setTab] = useState<'source' | 'display'>('source');
   const [preview, setPreview] = useState<Preview>({ status: 'idle' });
   const [gitLink, setGitLink] = useState('');
+  // Set when the macro was inserted by pasting a link (macro autoconvert).
+  const [autoConvertLink, setAutoConvertLink] = useState<string>();
+  const [autoConverted, setAutoConverted] = useState(false);
+  const [contentId, setContentId] = useState<string>();
+  // Bumped when the selected attachment's content changes (same name, new version).
+  const [previewNonce, setPreviewNonce] = useState(0);
   const [gitLinkError, setGitLinkError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string>();
@@ -134,17 +141,26 @@ function ConfigApp() {
   const loadAttachments = useCallback(async () => {
     setAttachmentsError(undefined);
     try {
-      setAttachments(await call(invoke('listAttachments')));
+      const list = await call(invoke('listAttachments'));
+      setAttachments(list);
+      return list;
     } catch (err) {
       setAttachmentsError(toAppError(err));
       setAttachments([]);
+      return undefined;
     }
   }, []);
 
   useEffect(() => {
     view
       .getContext()
-      .then((ctx) => setConfig({ docExpansion: 'list', showModels: true, ...((ctx.extension?.config as MacroConfig | undefined) ?? {}) }))
+      .then((ctx) => {
+        setConfig({ docExpansion: 'list', showModels: true, ...((ctx.extension?.config as MacroConfig | undefined) ?? {}) });
+        const content = (ctx.extension as { content?: { id?: string | number } } | undefined)?.content;
+        if (content?.id !== undefined) setContentId(String(content.id));
+        const link = (ctx.extension as { autoConvertLink?: unknown } | undefined)?.autoConvertLink;
+        if (typeof link === 'string') setAutoConvertLink(link);
+      })
       .catch(() => setConfig({ docExpansion: 'list', showModels: true }));
     call(invoke('getEditorOptions'))
       .then(setOptions)
@@ -160,6 +176,18 @@ function ConfigApp() {
   }, [loadAttachments]);
 
   const connections = options?.connections ?? [];
+
+  // Turn the pasted link into settings once, for a macro that has none yet.
+  useEffect(() => {
+    if (!autoConvertLink || !options || !config || config.sourceType || autoConverted) return;
+    setAutoConverted(true);
+    const parsed = parseGitFileLink(autoConvertLink);
+    setGitLink(autoConvertLink);
+    if (!parsed) return;
+    const match = matchConnection(parsed, options.connections);
+    if (!match) setGitLinkError(t('ui.config.pasteLinkNoConnection', { provider: t(`ui.provider.${parsed.provider}`) }));
+    update({ sourceType: 'git', gitConnectionId: match?.id, gitRepo: parsed.repo, gitRef: parsed.ref || undefined, gitPath: parsed.path || undefined });
+  }, [autoConvertLink, options, config, autoConverted, t]);
   const sourceError = config ? validateSource(t, config, connections, locale) : undefined;
   const serverUrlError = config?.serverUrl?.trim() && !isHttpsUrl(config.serverUrl) ? t('ui.config.serverUrlInvalid') : undefined;
   const currentSourceKey = config ? sourceKey(config) : '';
@@ -184,7 +212,7 @@ function ConfigApp() {
       }
     }, 600);
     return () => clearTimeout(timer);
-  }, [currentSourceKey, sourceError]);
+  }, [currentSourceKey, sourceError, previewNonce]);
 
   const tags = preview.status === 'ready' ? preview.data.summary.tags : [];
   const filteredCount = useMemo(() => {
@@ -210,9 +238,14 @@ function ConfigApp() {
       setGitLinkError(t('ui.config.pasteLinkInvalid'));
       return;
     }
-    const match = connections.find((c) => c.provider === parsed.provider) ?? connections.find((c) => c.id === config?.gitConnectionId);
+    const match = matchConnection(parsed, connections);
     setGitLinkError(match ? undefined : t('ui.config.pasteLinkNoConnection', { provider: t(`ui.provider.${parsed.provider}`) }));
-    update({ gitConnectionId: match?.id ?? config?.gitConnectionId, gitRepo: parsed.repo, gitRef: parsed.ref, gitPath: parsed.path });
+    update({
+      gitConnectionId: match?.id ?? config?.gitConnectionId,
+      gitRepo: parsed.repo,
+      gitRef: parsed.ref || undefined,
+      gitPath: parsed.path || undefined,
+    });
   };
 
   const save = async () => {
@@ -261,6 +294,7 @@ function ConfigApp() {
         />
 
         {optionsError ? <ErrorMessage error={optionsError} /> : null}
+        {autoConverted && tab === 'source' ? <Message>{t('ui.config.autoConverted')}</Message> : null}
 
         {tab === 'source' ? (
           <div className="sp-stack">
@@ -286,34 +320,15 @@ function ConfigApp() {
             </div>
 
             {config.sourceType === 'attachment' ? (
-              <div className="sp-stack">
-                {attachmentsError ? <ErrorMessage error={attachmentsError} /> : null}
-                {attachments && attachments.length === 0 && !attachmentsError ? (
-                  <Message title={t('ui.config.noAttachmentsTitle')}>{t('ui.config.noAttachmentsBody')}</Message>
-                ) : null}
-                <div className="sp-row sp-row-bottom">
-                  <div className="sp-grow">
-                    <Field label={t('ui.config.attachment')}>
-                      {(id) => (
-                        <select id={id} className="sp-select" value={config.attachment ?? ''} onChange={(e) => update({ attachment: e.target.value || undefined })}>
-                          <option value="">{t('ui.config.selectFile')}</option>
-                          {config.attachment && !attachments?.some((a) => a.title === config.attachment) ? (
-                            <option value={config.attachment}>{t('ui.config.notFoundSuffix', { name: config.attachment })}</option>
-                          ) : null}
-                          {attachments?.map((a) => (
-                            <option key={a.title} value={a.title}>
-                              {a.title}
-                              {a.fileSize ? ` (${t('ui.common.kb', { size: Math.max(1, Math.round(a.fileSize / 1024)) })})` : ''}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </Field>
-                  </div>
-                  <Button onClick={() => void loadAttachments()}>{t('ui.config.refreshList')}</Button>
-                </div>
-                <span className="sp-help">{t('ui.config.attachmentRefsHelp')}</span>
-              </div>
+              <AttachmentSource
+                config={config}
+                update={update}
+                attachments={attachments}
+                attachmentsError={attachmentsError}
+                reload={loadAttachments}
+                contentId={contentId}
+                onFileChanged={() => setPreviewNonce((n) => n + 1)}
+              />
             ) : null}
 
             {config.sourceType === 'git' ? (
@@ -376,22 +391,32 @@ function ConfigApp() {
                       </>
                     )}
                   </Field>
-                  <div className="sp-grid-2">
-                    <Field
-                      label={t('ui.config.ref')}
-                      help={selectedConnection?.defaultRef ? t('ui.config.refDefault', { ref: selectedConnection.defaultRef }) : t('ui.config.refHelp')}
-                    >
+                  {selectedConnection?.provider === 'swaggerhub' ? (
+                    <Field label={t('ui.config.version')} help={t('ui.config.versionHelp')}>
                       {(id, describedBy) => (
-                        <input id={id} aria-describedby={describedBy} className="sp-input" placeholder="main" value={config.gitRef ?? ''} onChange={(e) => update({ gitRef: e.target.value })} />
+                        <input id={id} aria-describedby={describedBy} className="sp-input" placeholder="1.0.0" value={config.gitRef ?? ''} onChange={(e) => update({ gitRef: e.target.value })} />
                       )}
                     </Field>
-                    <Field label={t('ui.config.filePath')}>
-                      {(id) => (
-                        <input id={id} className="sp-input" placeholder="api/openapi.yaml" value={config.gitPath ?? ''} onChange={(e) => update({ gitPath: e.target.value })} />
-                      )}
-                    </Field>
-                  </div>
-                  <span className="sp-help">{t('ui.config.gitRefsHelp')}</span>
+                  ) : (
+                    <>
+                      <div className="sp-grid-2">
+                        <Field
+                          label={t('ui.config.ref')}
+                          help={selectedConnection?.defaultRef ? t('ui.config.refDefault', { ref: selectedConnection.defaultRef }) : t('ui.config.refHelp')}
+                        >
+                          {(id, describedBy) => (
+                            <input id={id} aria-describedby={describedBy} className="sp-input" placeholder="main" value={config.gitRef ?? ''} onChange={(e) => update({ gitRef: e.target.value })} />
+                          )}
+                        </Field>
+                        <Field label={t('ui.config.filePath')}>
+                          {(id) => (
+                            <input id={id} className="sp-input" placeholder="api/openapi.yaml" value={config.gitPath ?? ''} onChange={(e) => update({ gitPath: e.target.value })} />
+                          )}
+                        </Field>
+                      </div>
+                      <span className="sp-help">{t('ui.config.gitRefsHelp')}</span>
+                    </>
+                  )}
                 </div>
               )
             ) : null}
@@ -412,25 +437,13 @@ function ConfigApp() {
             ) : null}
 
             {config.sourceType === 'inline' ? (
-              <Field
-                label={t('ui.config.inlineLabel')}
-                help={t('ui.config.inlineHelp', {
-                  count: (config.inlineSpec ?? '').length.toLocaleString(toLanguageTag(locale)),
-                  max: MAX_INLINE.toLocaleString(toLanguageTag(locale)),
-                })}
-              >
-                {(id, describedBy) => (
-                  <textarea
-                    id={id}
-                    aria-describedby={describedBy}
-                    className="sp-input sp-code"
-                    rows={14}
-                    spellCheck={false}
-                    value={config.inlineSpec ?? ''}
-                    onChange={(e) => update({ inlineSpec: e.target.value })}
-                  />
-                )}
-              </Field>
+              <InlineSource
+                config={config}
+                update={update}
+                contentId={contentId}
+                existing={(attachments ?? []).map((a) => a.title)}
+                onConverted={loadAttachments}
+              />
             ) : null}
           </div>
         ) : (
@@ -573,7 +586,7 @@ function ConfigApp() {
             {!preview.data.meta.serversResolvable && config.tryItOut === true && !config.serverUrl?.trim() ? (
               <Message appearance="warning">{t('warnings.relativeServers')}</Message>
             ) : null}
-            <ApiDocs spec={preview.spec} config={config} tryItOutAllowed={options.tryItOutEnabled && config.tryItOut === true} preview={cleanConfig(config)} />
+            <SpecView kind={preview.data.summary.kind} spec={preview.spec} config={config} tryItOutAllowed={options.tryItOutEnabled && config.tryItOut === true} preview={cleanConfig(config)} />
           </>
         ) : null}
       </section>

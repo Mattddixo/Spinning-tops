@@ -1,4 +1,4 @@
-import { applyServerOverride, filterSpec, summarizeSpec } from '../shared/spec';
+import { applyServerOverride, filterSpec, isAsyncApi, summarizeSpec } from '../shared/spec';
 import type { MacroConfig, SpecSummary } from '../shared/types';
 import { readContext } from './context';
 import { AppFailure } from './errors';
@@ -67,6 +67,9 @@ export async function exportMacro(payload: { config?: MacroConfig; exportType?: 
     const raw = (payload.context ?? {}) as Record<string, unknown> & { extension?: Record<string, unknown> };
     const ctx = readContext({ ...raw, accountId: undefined, accountType: 'anonymous', extension: { ...raw.extension, config } });
     const loaded = await loadSpec(ctx, config);
+    // AsyncAPI specs travel as the parser's stringified document; the summary
+    // already has the channels and operations, and there are no filters to apply.
+    if (isAsyncApi(loaded.summary.kind)) return buildExportAdf(loaded.summary, config, loaded.meta.sourceLink);
     const spec = applyServerOverride(decodeSpec(loaded.specGz), loaded.summary.kind, config.serverUrl);
     const filtered = filterSpec(spec, config);
     return buildExportAdf(summarizeSpec(filtered, loaded.summary.kind), config, loaded.meta.sourceLink);

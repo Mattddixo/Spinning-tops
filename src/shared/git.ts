@@ -6,6 +6,12 @@ import type { GitProvider } from './types';
 //   GitLab:      GET {api}/projects/{encoded project}/repository/files/{encoded path}/raw?ref=
 //   Bitbucket:   GET {api}/repositories/{ws}/{repo}/src/{commit}/{path}
 //                (commit must be a hash, so branch/tag names get looked up first)
+//   Azure DevOps: GET {api}/{org}/{project}/_apis/git/repositories/{repo}/items?path=
+//                &versionDescriptor.version=&versionDescriptor.versionType=branch|tag|commit&api-version=7.1
+//                (MicrosoftDocs/vsts-rest-api-specs, git 7.1). PATs go as Basic with an empty user.
+//   SwaggerHub:  GET {api}/apis/{owner}/{api}/{version}?resolved=true, default version from
+//                GET {api}/apis/{owner}/{api}/settings/default -> { version }. Key as Bearer.
+//                (SmartBear/swaggerhub-cli). On-premise API base is https://HOST/v1.
 
 export interface ProviderDefaults {
   label: string;
@@ -37,7 +43,24 @@ export const PROVIDERS: Record<GitProvider, ProviderDefaults> = {
     repoHint: 'workspace/repository',
     tokenHint: 'Repository, project or workspace access token with the "repository" (read) scope.',
   },
+  azure: {
+    label: 'Azure DevOps',
+    apiBaseUrl: 'https://dev.azure.com',
+    webBaseUrl: 'https://dev.azure.com',
+    repoHint: 'organization/project/repository',
+    tokenHint: 'Personal access token with the Code (Read) scope.',
+  },
+  swaggerhub: {
+    label: 'SwaggerHub',
+    apiBaseUrl: 'https://api.swaggerhub.com',
+    webBaseUrl: 'https://app.swaggerhub.com',
+    repoHint: 'owner/api-name',
+    tokenHint: 'SwaggerHub API key (from your account settings). Not needed for public APIs.',
+  },
 };
+
+/** SwaggerHub serves whole API definitions, so there is no file path to pick. */
+export const usesFilePath = (provider: GitProvider) => provider !== 'swaggerhub';
 
 const SPEC_EXTENSIONS = ['.json', '.yaml', '.yml'];
 
@@ -66,11 +89,16 @@ export function normaliseRepoPath(input: string): string | undefined {
 }
 
 const REPO_SEGMENT = /^[A-Za-z0-9._-]+$/;
+// Azure DevOps project and repository names may contain spaces.
+const AZURE_SEGMENT = /^[A-Za-z0-9._-](?:[A-Za-z0-9._ -]*[A-Za-z0-9._-])?$/;
 
 export function isValidRepo(provider: GitProvider, repo: string): boolean {
   const segments = repo.split('/');
-  if (segments.some((s) => !REPO_SEGMENT.test(s) || s === '.' || s === '..')) return false;
-  return provider === 'gitlab' ? segments.length >= 2 : segments.length === 2;
+  const pattern = provider === 'azure' ? AZURE_SEGMENT : REPO_SEGMENT;
+  if (segments.some((s) => !pattern.test(s) || s === '.' || s === '..')) return false;
+  if (provider === 'gitlab') return segments.length >= 2;
+  if (provider === 'azure') return segments.length === 3;
+  return segments.length === 2;
 }
 
 // Entries are "acme/payments" or "acme/*".
@@ -115,6 +143,31 @@ export function bitbucketRepoUrl(apiBaseUrl: string, repo: string): string {
   return `${trimBase(apiBaseUrl)}/repositories/${encodeSegments(repo)}`;
 }
 
+export type AzureVersionType = 'branch' | 'tag' | 'commit';
+
+export function azureItemUrl(apiBaseUrl: string, repo: string, path: string, ref?: string, versionType: AzureVersionType = 'branch'): string {
+  const [org, project, name] = repo.split('/');
+  const query = new URLSearchParams({ path: `/${path}` });
+  if (ref) {
+    query.set('versionDescriptor.version', ref);
+    query.set('versionDescriptor.versionType', versionType);
+  }
+  query.set('api-version', '7.1');
+  return `${trimBase(apiBaseUrl)}/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_apis/git/repositories/${encodeURIComponent(name)}/items?${query}`;
+}
+
+const isCommitSha = (ref: string) => /^[0-9a-f]{40}$/i.test(ref);
+export const azureVersionTypeFor = (ref: string): AzureVersionType => (isCommitSha(ref) ? 'commit' : 'branch');
+
+export function swaggerhubApiUrl(apiBaseUrl: string, repo: string, version: string): string {
+  // resolved=true inlines SwaggerHub domain references, which would otherwise be external URLs.
+  return `${trimBase(apiBaseUrl)}/apis/${encodeSegments(repo)}/${encodeURIComponent(version)}?resolved=true`;
+}
+
+export function swaggerhubDefaultVersionUrl(apiBaseUrl: string, repo: string): string {
+  return `${trimBase(apiBaseUrl)}/apis/${encodeSegments(repo)}/settings/default`;
+}
+
 export function webFileUrl(provider: GitProvider, webBaseUrl: string, repo: string, path: string, ref?: string): string {
   const base = trimBase(webBaseUrl);
   const r = encodeSegments(ref || 'HEAD');
@@ -125,6 +178,14 @@ export function webFileUrl(provider: GitProvider, webBaseUrl: string, repo: stri
       return `${base}/${encodeSegments(repo)}/-/blob/${r}/${encodeSegments(path)}`;
     case 'bitbucket':
       return `${base}/${encodeSegments(repo)}/src/${r}/${encodeSegments(path)}`;
+    case 'azure': {
+      const [org, project, name] = repo.split('/');
+      const query = new URLSearchParams({ path: `/${path}` });
+      if (ref) query.set('version', `${isCommitSha(ref) ? 'GC' : 'GB'}${ref}`);
+      return `${base}/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_git/${encodeURIComponent(name)}?${query}`;
+    }
+    case 'swaggerhub':
+      return `${base}/apis/${encodeSegments(repo)}${ref ? `/${encodeURIComponent(ref)}` : ''}`;
   }
 }
 
@@ -132,7 +193,9 @@ export interface ParsedGitLink {
   provider: GitProvider;
   host: string;
   repo: string;
+  /** Empty means the default branch (or SwaggerHub's default version). */
   ref: string;
+  /** Empty for SwaggerHub. */
   path: string;
 }
 
@@ -146,8 +209,28 @@ export function parseGitFileLink(link: string): ParsedGitLink | undefined {
     return undefined;
   }
   if (url.protocol !== 'https:') return undefined;
-  const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+  let parts: string[];
+  try {
+    parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+  } catch {
+    return undefined;
+  }
   const host = url.host.toLowerCase();
+
+  // https://app.swaggerhub.com/apis/{owner}/{api}/{version} (also apis-docs/)
+  if (host.endsWith('swaggerhub.com') && (parts[0] === 'apis' || parts[0] === 'apis-docs') && parts.length >= 3) {
+    return { provider: 'swaggerhub', host, repo: `${parts[1]}/${parts[2]}`, ref: parts[3] ?? '', path: '' };
+  }
+
+  // https://dev.azure.com/{org}/{project}/_git/{repo}?path=/openapi.yaml&version=GBmain
+  if (host === 'dev.azure.com' && parts.length === 4 && parts[2] === '_git') {
+    const path = (url.searchParams.get('path') ?? '').replace(/^\/+/, '');
+    if (!path) return undefined;
+    const version = url.searchParams.get('version') ?? '';
+    // GB = branch, GT = tag, GC = commit
+    const ref = /^G[BTC]/.test(version) ? version.slice(2) : '';
+    return { provider: 'azure', host, repo: `${parts[0]}/${parts[1]}/${parts[3]}`, ref, path };
+  }
 
   if (host === 'raw.githubusercontent.com' && parts.length >= 4) {
     const [owner, repo, ...rest] = parts;
@@ -176,6 +259,23 @@ export function parseGitFileLink(link: string): ParsedGitLink | undefined {
   }
 
   return undefined;
+}
+
+export function hostOf(url: string): string {
+  try {
+    return new URL(url).host.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Pick the connection a pasted link belongs to: same provider, same web host,
+ * and the repository is on its allow-list. The host has to match so a
+ * github.com link never loads a same-named repo from an Enterprise server.
+ */
+export function matchConnection<T extends { provider: GitProvider; repos: string[]; webHost: string }>(link: ParsedGitLink, connections: T[]): T | undefined {
+  return connections.find((c) => c.provider === link.provider && c.webHost === link.host && repoAllowed(link.repo, c.repos));
 }
 
 export function originOf(url: string): string | undefined {

@@ -10,9 +10,13 @@ export default defineConfig(({ mode }) => ({
   base: './',
   plugins: [react()],
   resolve: {
-    alias: (mode === 'harness'
-      ? { '@forge/bridge': fileURLToPath(new URL('./src/harness/bridge-mock.ts', import.meta.url)) }
-      : {}) as Record<string, string>,
+    alias: [
+      // The real parser entry compiles JSON schemas with `new Function` on load,
+      // which Forge's CSP blocks. AsyncAPI is parsed on the backend instead.
+      { find: /^@asyncapi\/parser$/, replacement: fileURLToPath(new URL('./src/asyncapi/parser-shim.ts', import.meta.url)) },
+      { find: /^@asyncapi\/parser\/cjs\/document$/, replacement: '@asyncapi/parser/esm/document' },
+      ...(mode === 'harness' ? [{ find: '@forge/bridge', replacement: fileURLToPath(new URL('./src/harness/bridge-mock.ts', import.meta.url)) }] : []),
+    ],
   },
   server: { fs: { allow: [fileURLToPath(new URL('../..', import.meta.url))] } },
   build: {
@@ -25,6 +29,7 @@ export default defineConfig(({ mode }) => ({
         macro: `${root}macro.html`,
         config: `${root}config.html`,
         admin: `${root}admin.html`,
+        space: `${root}space.html`,
       },
     },
   },

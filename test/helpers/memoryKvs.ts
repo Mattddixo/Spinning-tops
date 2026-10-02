@@ -21,6 +21,34 @@ export function createMemoryKvs() {
       deleteSecret: async (key: string) => {
         secrets.delete(key);
       },
+      // Only what the app uses: where('key', beginsWith(prefix)), limit, cursor.
+      query: () => {
+        let prefix = '';
+        let limit = 100;
+        let offset = 0;
+        const builder = {
+          where: (_property: 'key', clause: { condition: string; values: string[] }) => {
+            if (clause.condition !== 'BEGINS_WITH') throw new Error(`memoryKvs: unsupported condition ${clause.condition}`);
+            prefix = clause.values[0];
+            return builder;
+          },
+          limit: (n: number) => {
+            limit = n;
+            return builder;
+          },
+          cursor: (c: string) => {
+            offset = Number(c);
+            return builder;
+          },
+          getMany: async () => {
+            const keys = [...values.keys()].filter((k) => k.startsWith(prefix)).sort();
+            const page = keys.slice(offset, offset + limit);
+            const next = offset + limit < keys.length ? String(offset + limit) : undefined;
+            return { results: page.map((key) => ({ key, value: clone(values.get(key)) })), nextCursor: next };
+          },
+        };
+        return builder;
+      },
       batchGet: async (items: Array<{ key: string }>) => ({
         successfulKeys: items.filter((i) => values.has(i.key)).map((i) => ({ key: i.key, value: clone(values.get(i.key)) })),
         failedKeys: [],

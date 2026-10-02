@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { originOf, PROVIDERS } from '../../../../src/shared/git';
+import { originOf, PROVIDERS, usesFilePath } from '../../../../src/shared/git';
 import type { Translate } from '../../../../src/shared/i18n';
 import type { AppError, AppSettings, AuditEntryView, GitAuthType, GitConnection, GitConnectionInput, GitProvider } from '../../../../src/shared/types';
 import { call, invoke, toAppError } from '../api';
@@ -26,6 +26,20 @@ const AUTH_OPTIONS: Record<GitProvider, Array<{ id: GitAuthType; label: string }
     { id: 'basic', label: 'ui.admin.authBasicBitbucket' },
     { id: 'none', label: 'ui.admin.authNone' },
   ],
+  azure: [
+    { id: 'pat', label: 'ui.admin.authPat' },
+    { id: 'none', label: 'ui.admin.authNone' },
+  ],
+  swaggerhub: [
+    { id: 'bearer', label: 'ui.admin.authSwaggerhubKey' },
+    { id: 'none', label: 'ui.admin.authNonePublicApis' },
+  ],
+};
+
+const API_URL_HELP: Partial<Record<GitProvider, string>> = {
+  github: 'ui.admin.apiUrlGithubHelp',
+  gitlab: 'ui.admin.apiUrlGitlabHelp',
+  swaggerhub: 'ui.admin.apiUrlSwaggerhubHelp',
 };
 
 const CACHE_OPTIONS = [0, 5, 10, 30, 60, 360, 1440];
@@ -294,7 +308,8 @@ function ConnectionEditor({
     }
   };
 
-  const apiHelp = draft.provider === 'github' ? t('ui.admin.apiUrlGithubHelp') : draft.provider === 'gitlab' ? t('ui.admin.apiUrlGitlabHelp') : undefined;
+  const apiHelpKey = API_URL_HELP[draft.provider];
+  const apiHelp = apiHelpKey ? t(apiHelpKey) : undefined;
 
   return (
     <div className="sp-card sp-stack" role="group" aria-label={heading}>
@@ -382,6 +397,7 @@ function ConnectionEditor({
 
 function TestConnection({ connection }: { connection: GitConnection }) {
   const t = useT();
+  const needsPath = usesFilePath(connection.provider);
   const [repo, setRepo] = useState(connection.repos.find((r) => !r.includes('*')) ?? '');
   const [path, setPath] = useState('openapi.yaml');
   const [ref, setRef] = useState(connection.defaultRef ?? '');
@@ -392,7 +408,7 @@ function TestConnection({ connection }: { connection: GitConnection }) {
     setBusy(true);
     setResult(undefined);
     try {
-      const r = await call(invoke('adminTestConnection', { id: connection.id, repo, path, ref }));
+      const r = await call(invoke('adminTestConnection', { id: connection.id, repo, ref, ...(needsPath ? { path } : {}) }));
       setResult({
         ok: true,
         text: t('ui.admin.testResult', { title: r.title, version: r.version ? ` v${r.version}` : '', ops: r.operationCount, files: r.fileCount }),
@@ -408,9 +424,17 @@ function TestConnection({ connection }: { connection: GitConnection }) {
     <div className="sp-test sp-stack-tight">
       <div className="sp-row sp-row-nowrap">
         <input className="sp-input" aria-label={t('ui.admin.testRepo')} placeholder={PROVIDERS[connection.provider].repoHint} value={repo} onChange={(e) => setRepo(e.target.value)} />
-        <input className="sp-input" aria-label={t('ui.admin.testBranch')} placeholder="main" value={ref} onChange={(e) => setRef(e.target.value)} />
-        <input className="sp-input" aria-label={t('ui.admin.testPath')} placeholder="openapi.yaml" value={path} onChange={(e) => setPath(e.target.value)} />
-        <Button onClick={() => void run()} disabled={busy || !repo || !path}>
+        <input
+          className="sp-input"
+          aria-label={needsPath ? t('ui.admin.testBranch') : t('ui.config.version')}
+          placeholder={needsPath ? 'main' : '1.0.0'}
+          value={ref}
+          onChange={(e) => setRef(e.target.value)}
+        />
+        {needsPath ? (
+          <input className="sp-input" aria-label={t('ui.admin.testPath')} placeholder="openapi.yaml" value={path} onChange={(e) => setPath(e.target.value)} />
+        ) : null}
+        <Button onClick={() => void run()} disabled={busy || !repo || (needsPath && !path)}>
           {busy ? t('ui.common.testing') : t('ui.common.test')}
         </Button>
       </div>

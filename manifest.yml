@@ -15,6 +15,68 @@ modules:
         - unlicensed
         - anonymous
       emitsReadyEvent: true
+      # Pasting a link to a spec file (or a SwaggerHub API) inserts the macro.
+      # Only spec-looking file names, so ordinary code links are left alone.
+      autoConvert:
+        matchers:
+          - pattern: https://github.com/*/*/blob/*/openapi.yaml
+          - pattern: https://github.com/*/*/blob/*/openapi.yml
+          - pattern: https://github.com/*/*/blob/*/openapi.json
+          - pattern: https://github.com/*/*/blob/*/swagger.yaml
+          - pattern: https://github.com/*/*/blob/*/swagger.yml
+          - pattern: https://github.com/*/*/blob/*/swagger.json
+          - pattern: https://github.com/*/*/blob/*/*/openapi.yaml
+          - pattern: https://github.com/*/*/blob/*/*/openapi.yml
+          - pattern: https://github.com/*/*/blob/*/*/openapi.json
+          - pattern: https://github.com/*/*/blob/*/*/swagger.yaml
+          - pattern: https://github.com/*/*/blob/*/*/swagger.yml
+          - pattern: https://github.com/*/*/blob/*/*/swagger.json
+          - pattern: https://github.com/*/*/blob/*/*/*/openapi.yaml
+          - pattern: https://github.com/*/*/blob/*/*/*/openapi.yml
+          - pattern: https://github.com/*/*/blob/*/*/*/openapi.json
+          - pattern: https://github.com/*/*/blob/*/*/*/swagger.yaml
+          - pattern: https://github.com/*/*/blob/*/*/*/swagger.yml
+          - pattern: https://github.com/*/*/blob/*/*/*/swagger.json
+          - pattern: https://gitlab.com/*/*/-/blob/*/openapi.yaml
+          - pattern: https://gitlab.com/*/*/-/blob/*/openapi.yml
+          - pattern: https://gitlab.com/*/*/-/blob/*/openapi.json
+          - pattern: https://gitlab.com/*/*/-/blob/*/swagger.yaml
+          - pattern: https://gitlab.com/*/*/-/blob/*/swagger.yml
+          - pattern: https://gitlab.com/*/*/-/blob/*/swagger.json
+          - pattern: https://gitlab.com/*/*/-/blob/*/*/openapi.yaml
+          - pattern: https://gitlab.com/*/*/-/blob/*/*/openapi.yml
+          - pattern: https://gitlab.com/*/*/-/blob/*/*/openapi.json
+          - pattern: https://gitlab.com/*/*/-/blob/*/*/swagger.yaml
+          - pattern: https://gitlab.com/*/*/-/blob/*/*/swagger.yml
+          - pattern: https://gitlab.com/*/*/-/blob/*/*/swagger.json
+          - pattern: https://gitlab.com/*/*/-/blob/*/*/*/openapi.yaml
+          - pattern: https://gitlab.com/*/*/-/blob/*/*/*/openapi.yml
+          - pattern: https://gitlab.com/*/*/-/blob/*/*/*/openapi.json
+          - pattern: https://gitlab.com/*/*/-/blob/*/*/*/swagger.yaml
+          - pattern: https://gitlab.com/*/*/-/blob/*/*/*/swagger.yml
+          - pattern: https://gitlab.com/*/*/-/blob/*/*/*/swagger.json
+          - pattern: https://bitbucket.org/*/*/src/*/openapi.yaml
+          - pattern: https://bitbucket.org/*/*/src/*/openapi.yml
+          - pattern: https://bitbucket.org/*/*/src/*/openapi.json
+          - pattern: https://bitbucket.org/*/*/src/*/swagger.yaml
+          - pattern: https://bitbucket.org/*/*/src/*/swagger.yml
+          - pattern: https://bitbucket.org/*/*/src/*/swagger.json
+          - pattern: https://bitbucket.org/*/*/src/*/*/openapi.yaml
+          - pattern: https://bitbucket.org/*/*/src/*/*/openapi.yml
+          - pattern: https://bitbucket.org/*/*/src/*/*/openapi.json
+          - pattern: https://bitbucket.org/*/*/src/*/*/swagger.yaml
+          - pattern: https://bitbucket.org/*/*/src/*/*/swagger.yml
+          - pattern: https://bitbucket.org/*/*/src/*/*/swagger.json
+          - pattern: https://bitbucket.org/*/*/src/*/*/*/openapi.yaml
+          - pattern: https://bitbucket.org/*/*/src/*/*/*/openapi.yml
+          - pattern: https://bitbucket.org/*/*/src/*/*/*/openapi.json
+          - pattern: https://bitbucket.org/*/*/src/*/*/*/swagger.yaml
+          - pattern: https://bitbucket.org/*/*/src/*/*/*/swagger.yml
+          - pattern: https://bitbucket.org/*/*/src/*/*/*/swagger.json
+          - pattern: https://app.swaggerhub.com/apis/*/*
+          - pattern: https://app.swaggerhub.com/apis/*/*/*
+          - pattern: https://app.swaggerhub.com/apis-docs/*/*
+          - pattern: https://app.swaggerhub.com/apis-docs/*/*/*
       adfExport:
         function: export
       config:
@@ -38,6 +100,13 @@ modules:
         function: resolver
       title: SpecPage settings
       useAsConfig: true
+  confluence:spacePage:
+    - key: specpage-space-apis
+      resource: ui/space
+      resolver:
+        function: resolver
+      title: API docs
+      route: api-docs
   function:
     - key: resolver
       handler: index.handler
@@ -54,6 +123,7 @@ resources:
       macro: macro.html
       config: config.html
       admin: admin.html
+      space: space.html
 
 permissions:
   scopes:
@@ -62,6 +132,10 @@ permissions:
     # read spec attachments on the current page
     - read:attachment:confluence
     - readonly:content.attachment:confluence
+    # upload or update spec attachments from the macro settings (as the editing user)
+    - write:confluence-file
+    # page titles and permission checks for the space API list
+    - read:page:confluence
     # admin check for the settings page
     - read:confluence-user
   external:

@@ -9,20 +9,27 @@ export interface SecureContext {
   contentId?: string;
   contentType?: string;
   spaceKey?: string;
+  spaceId?: string;
+  /** This macro instance on the page. */
+  localId?: string;
   isEditing: boolean;
+  /** The pasted link when the macro was inserted by autoconvert. */
+  autoConvertLink?: string;
   config: MacroConfig;
   licenseActive: boolean;
 }
 
 type RawContext = Record<string, unknown> & {
   accountId?: string;
+  localId?: string;
   accountType?: string;
   license?: { active?: boolean };
   extension?: {
     content?: { id?: string; type?: string };
-    space?: { key?: string };
+    space?: { key?: string; id?: string | number };
     config?: MacroConfig;
     isEditing?: boolean;
+    autoConvertLink?: string;
   };
 };
 
@@ -37,7 +44,10 @@ export function readContext(raw: unknown): SecureContext {
     contentId: ext.content?.id ? String(ext.content.id) : undefined,
     contentType: ext.content?.type,
     spaceKey: ext.space?.key,
+    spaceId: ext.space?.id !== undefined ? String(ext.space.id) : undefined,
+    localId: typeof ctx.localId === 'string' && ctx.localId ? ctx.localId : undefined,
     isEditing: ext.isEditing === true,
+    autoConvertLink: typeof ext.autoConvertLink === 'string' && ext.autoConvertLink.length <= 2048 ? ext.autoConvertLink : undefined,
     config: ext.config ?? {},
     // license is undefined outside production, so treat that as active.
     licenseActive: ctx.license === undefined || ctx.license?.active !== false,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSearchText, detectKind, filterSpec, parseSpecText, summarizeSpec, validateSpecShape } from '../src/shared/spec';
+import { applyServerOverride, buildSearchText, detectKind, filterSpec, parseSpecText, resolveServers, summarizeSpec, validateSpecShape } from '../src/shared/spec';
 
 const petstore = {
   openapi: '3.1.0',
@@ -57,9 +57,11 @@ describe('detectKind / validateSpecShape', () => {
   });
 
   it('explains unsupported documents', () => {
-    const asyncapi = validateSpecShape({ asyncapi: '3.0.0' });
-    expect(asyncapi.ok).toBe(false);
-    if (!asyncapi.ok) expect(asyncapi.error.code).toBe('UNSUPPORTED_SPEC');
+    const oldAsync = validateSpecShape({ asyncapi: '1.2.0', info: {} });
+    expect(oldAsync.ok).toBe(false);
+    if (!oldAsync.ok) expect(oldAsync.error.code).toBe('UNSUPPORTED_SPEC');
+    expect(validateSpecShape({ asyncapi: '3.0.0', info: { title: 'x', version: '1' } })).toEqual({ ok: true, value: 'asyncapi-3' });
+    expect(validateSpecShape({ asyncapi: '2.6.0', info: { title: 'x', version: '1' } })).toEqual({ ok: true, value: 'asyncapi-2' });
     const noInfo = validateSpecShape({ openapi: '3.0.0' });
     expect(noInfo.ok).toBe(false);
   });
@@ -120,5 +122,43 @@ describe('buildSearchText', () => {
     expect(text).toContain('Petstore');
     expect(text).toContain('GET /pets/{id} Get pet');
     expect(buildSearchText(summarizeSpec(petstore, 'openapi-3.1'), 40).length).toBeLessThanOrEqual(40);
+  });
+});
+
+describe('AsyncAPI summaries', () => {
+  it('lists 3.x operations by action and channel address', () => {
+    const doc = {
+      asyncapi: '3.0.0',
+      info: { title: 'Accounts', version: '1.2.0', tags: [{ name: 'users' }] },
+      servers: { prod: { host: 'broker.example.com:5672', protocol: 'amqp', pathname: '/v1' } },
+      channels: { signedUp: { address: 'user/signedup' } },
+      operations: {
+        onSignup: { action: 'receive', channel: { $ref: '#/channels/signedUp' }, summary: 'React to sign-ups' },
+        sendSignup: { action: 'send', channel: { $ref: '#/channels/signedUp' } },
+      },
+    };
+    const summary = summarizeSpec(doc, 'asyncapi-3');
+    expect(summary).toMatchObject({ title: 'Accounts', version: '1.2.0', tags: ['users'], servers: ['amqp://broker.example.com:5672/v1'] });
+    expect(summary.operations.map((o) => `${o.method} ${o.path}`)).toEqual(['RECEIVE user/signedup', 'SEND user/signedup']);
+    expect(summary.operations[0].summary).toBe('React to sign-ups');
+  });
+
+  it('lists 2.x publish and subscribe operations', () => {
+    const doc = {
+      asyncapi: '2.6.0',
+      info: { title: 'Lights', version: '1' },
+      servers: { test: { url: 'test.mosquitto.org:1883', protocol: 'mqtt' } },
+      channels: { 'light/measured': { publish: { operationId: 'onMeasured', summary: 'Lumens' }, subscribe: {} } },
+    };
+    const summary = summarizeSpec(doc, 'asyncapi-2');
+    expect(summary.servers).toEqual(['mqtt://test.mosquitto.org:1883']);
+    expect(summary.operations.map((o) => `${o.method} ${o.path}`)).toEqual(['PUBLISH light/measured', 'SUBSCRIBE light/measured']);
+  });
+
+  it('leaves AsyncAPI documents alone in OpenAPI-only helpers', () => {
+    const doc = { asyncapi: '3.0.0', info: { title: 'x', version: '1' }, channels: {} };
+    expect(filterSpec(doc, { includeTags: ['a'] })).toBe(doc);
+    expect(applyServerOverride(doc, 'asyncapi-3', 'https://x.example.com')).toBe(doc);
+    expect(resolveServers(doc, 'asyncapi-3').spec).toBe(doc);
   });
 });

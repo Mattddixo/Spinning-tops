@@ -1,0 +1,141 @@
+import { asApp, asUser, route } from '@forge/api';
+import { kvs, WhereConditions } from '@forge/kvs';
+import { createHash } from 'node:crypto';
+import type { ApiEntry, ApiListItem, MacroConfig, SpecSummary } from '../shared/types';
+import { isLicensedUser, type SecureContext } from './context';
+import { fail } from './errors';
+
+// A small registry of the API docs on each page, so a space can list its APIs
+// (and, later, the whole site). Each macro instance writes one entry when it
+// loads: api:{spaceId}:{contentId}:{localId}. Listing checks every page
+// against the reader's own permissions and drops entries whose page or macro
+// is gone.
+
+const PREFIX = 'api';
+// Rewrite entries at most this often when nothing changed (keeps writes down on busy pages).
+const REFRESH_MS = 12 * 60 * 60 * 1000;
+const MAX_ENTRIES = 1000;
+const PAGE_BATCH = 250;
+
+const keyPart = (value: string) => value.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120);
+const entryKey = (spaceId: string, contentId: string, localId: string) => `${PREFIX}:${keyPart(spaceId)}:${keyPart(contentId)}:${keyPart(localId)}`;
+
+const sourceFingerprint = (config: MacroConfig) =>
+  createHash('sha256')
+    .update(JSON.stringify([config.sourceType, config.attachment, config.gitConnectionId, config.gitRepo, config.gitRef, config.gitPath, config.url, config.inlineSpec?.length]))
+    .digest('hex')
+    .slice(0, 16);
+
+/** Record (or refresh) the entry for this macro. Never throws: it must not break rendering. */
+export async function recordApi(ctx: SecureContext, config: MacroConfig, summary: SpecSummary, sourceLabel: string): Promise<void> {
+  if (!ctx.spaceId || !ctx.contentId || !ctx.localId || !config.sourceType) return;
+  if (ctx.contentType !== 'page' && ctx.contentType !== 'blogpost') return;
+  const key = entryKey(ctx.spaceId, ctx.contentId, ctx.localId);
+  const entry: ApiEntry = {
+    spaceId: ctx.spaceId,
+    contentId: ctx.contentId,
+    contentType: ctx.contentType,
+    localId: ctx.localId,
+    title: config.title?.trim() || summary.title,
+    version: summary.version,
+    kind: summary.kind,
+    operationCount: summary.operations.length,
+    sourceType: config.sourceType,
+    sourceLabel: config.sourceType === 'inline' ? '' : sourceLabel.slice(0, 300),
+    fingerprint: sourceFingerprint(config),
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    const existing = await kvs.get<ApiEntry>(key);
+    const same =
+      existing &&
+      (['title', 'version', 'kind', 'operationCount', 'sourceType', 'sourceLabel', 'fingerprint'] as const).every((k) => existing[k] === entry[k]);
+    if (same && Date.now() - Date.parse(existing.updatedAt) < REFRESH_MS) return;
+    await kvs.set(key, entry);
+  } catch (err) {
+    console.warn(`[catalog] write failed: ${err instanceof Error ? err.message : 'unknown'}`);
+  }
+}
+
+async function entriesWithPrefix(prefix: string): Promise<Array<{ key: string; value: ApiEntry }>> {
+  const out: Array<{ key: string; value: ApiEntry }> = [];
+  let cursor: string | undefined;
+  do {
+    let query = kvs.query().where('key', WhereConditions.beginsWith(prefix)).limit(100);
+    if (cursor) query = query.cursor(cursor);
+    const page = await query.getMany<ApiEntry>();
+    out.push(...page.results.map((r) => ({ key: r.key, value: r.value })));
+    cursor = page.nextCursor;
+  } while (cursor && out.length < MAX_ENTRIES);
+  return out;
+}
+
+interface PageInfo {
+  id: string;
+  title: string;
+  adf?: string;
+}
+
+/** v2 bulk read: only pages the caller can see come back. */
+async function readPages(as: 'user' | 'app', type: 'page' | 'blogpost', ids: string[], withBody: boolean): Promise<Map<string, PageInfo>> {
+  const found = new Map<string, PageInfo>();
+  const requester = as === 'user' ? asUser() : asApp();
+  for (let i = 0; i < ids.length; i += PAGE_BATCH) {
+    const batch = ids.slice(i, i + PAGE_BATCH).join(',');
+    const query = new URLSearchParams({ id: batch, limit: String(PAGE_BATCH) });
+    if (withBody) query.set('body-format', 'atlas_doc_format');
+    const path = type === 'page' ? route`/wiki/api/v2/pages?${query}` : route`/wiki/api/v2/blogposts?${query}`;
+    const res = await requester.requestConfluence(path, { headers: { Accept: 'application/json' } });
+    if (!res.ok) fail('UPSTREAM_ERROR', 'errors.confluencePagesFailed', { status: res.status });
+    const body = (await res.json()) as { results?: Array<{ id: string | number; title?: string; body?: { atlas_doc_format?: { value?: string } } }> };
+    for (const p of body.results ?? []) {
+      found.set(String(p.id), { id: String(p.id), title: p.title ?? '', adf: p.body?.atlas_doc_format?.value });
+    }
+  }
+  return found;
+}
+
+const MACRO_KEY = 'specpage-viewer';
+
+/**
+ * Does the page still have a SpecPage macro? Extension nodes in the page's ADF
+ * carry the module key inside extensionKey. This is deliberately loose: an
+ * entry is only dropped when no SpecPage macro is left on the page, so a
+ * live entry is never pruned by mistake. (A page that had two macros and lost
+ * one keeps the extra entry until the page loses them all.)
+ */
+export const pageHasMacro = (adf: string | undefined) => adf === undefined || adf.includes(MACRO_KEY);
+
+export async function listSpaceApis(ctx: SecureContext, spaceId: string): Promise<ApiListItem[]> {
+  // Page permissions are checked as the reader, which needs a licensed user.
+  if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'errors.catalogLicensedOnly');
+  if (!/^\d+$/.test(spaceId)) fail('BAD_REQUEST', 'errors.generic');
+  const entries = await entriesWithPrefix(`${PREFIX}:${keyPart(spaceId)}:`);
+  if (!entries.length) return [];
+
+  const stale: string[] = [];
+  const items: ApiListItem[] = [];
+  for (const type of ['page', 'blogpost'] as const) {
+    const ofType = entries.filter((e) => e.value.contentType === type);
+    if (!ofType.length) continue;
+    const ids = [...new Set(ofType.map((e) => e.value.contentId))];
+    const visible = await readPages('user', type, ids, true);
+    const hidden = ids.filter((id) => !visible.has(id));
+    // Not visible to the reader: either restricted (keep) or deleted (prune).
+    const exists = hidden.length ? await readPages('app', type, hidden, false) : new Map<string, PageInfo>();
+    for (const { key, value } of ofType) {
+      const page = visible.get(value.contentId);
+      if (!page) {
+        if (!exists.has(value.contentId)) stale.push(key);
+        continue;
+      }
+      if (!pageHasMacro(page.adf)) {
+        stale.push(key);
+        continue;
+      }
+      items.push({ ...value, pageTitle: page.title });
+    }
+  }
+  await Promise.all(stale.map((key) => kvs.delete(key).catch(() => undefined)));
+  return items.sort((a, b) => a.title.localeCompare(b.title) || a.pageTitle.localeCompare(b.pageTitle));
+}

@@ -14,11 +14,15 @@ const h = vi.hoisted(() => {
   };
 });
 
-vi.mock('@forge/kvs', () => ({
-  get kvs() {
-    return h.memory.kvs;
-  },
-}));
+vi.mock('@forge/kvs', async () => {
+  const actual = await vi.importActual<typeof import('@forge/kvs')>('@forge/kvs');
+  return {
+    WhereConditions: actual.WhereConditions,
+    get kvs() {
+      return h.memory.kvs;
+    },
+  };
+});
 
 // The real `route` is kept so the tests see the same escaping Forge does.
 vi.mock('@forge/api', async () => {
@@ -53,7 +57,11 @@ function response(status: number, body: string | object | Buffer, headers: Recor
 
 type Account = 'licensed' | 'unlicensed' | 'anonymous';
 
-async function call(functionKey: string, payload: unknown, opts: { account?: Account; extension?: Record<string, unknown>; license?: unknown } = {}) {
+async function call(
+  functionKey: string,
+  payload: unknown,
+  opts: { account?: Account; extension?: Record<string, unknown>; license?: unknown; localId?: string } = {},
+) {
   const account = opts.account ?? 'licensed';
   const accountId = account === 'anonymous' ? undefined : 'user-1';
   return handler(
@@ -61,7 +69,8 @@ async function call(functionKey: string, payload: unknown, opts: { account?: Acc
       call: { functionKey, payload: payload as Record<string, unknown> },
       context: {
         accountType: account,
-        extension: { type: 'macro', content: { id: '123', type: 'page' }, space: { key: 'ENG' }, ...opts.extension },
+        localId: opts.localId ?? 'macro-1',
+        extension: { type: 'macro', content: { id: '123', type: 'page' }, space: { key: 'ENG', id: '777' }, ...opts.extension },
       },
     } as never,
     { principal: { accountId }, license: opts.license },
@@ -545,5 +554,232 @@ describe('admin activity log', () => {
     expect((await call('adminRecordHostChange', { action: 'host.approve', host: 'x', group: 'apis' })).error?.code).toBe('FORBIDDEN');
     h.userConfluence.mockImplementation(async () => admin());
     expect((await call('adminRecordHostChange', { action: 'settings.update', host: 'x', group: 'apis' })).error?.code).toBe('BAD_REQUEST');
+  });
+});
+
+const SIMPLE_YAML = ROOT_YAML.replace("{ $ref: './schemas/payment.yaml' }", '{ type: string }');
+
+describe('Azure DevOps connections', () => {
+  beforeEach(async () => {
+    await h.memory.kvs.set('connections', [
+      { id: 'a1', name: 'Contoso', provider: 'azure', apiBaseUrl: 'https://dev.azure.com', webBaseUrl: 'https://dev.azure.com', authType: 'pat', repos: ['contoso/*'], spaceKeys: [], hasToken: true, createdAt: 'x', updatedAt: 'x' },
+    ]);
+    await h.memory.kvs.setSecret('connection-token:a1', 'pat-secret');
+  });
+  const config = { sourceType: 'git', gitConnectionId: 'a1', gitRepo: 'contoso/Fabrikam Fiber/payments', gitRef: 'v2.0', gitPath: 'api/openapi.yaml' };
+
+  it('sends the PAT as Basic auth and falls back from branch to tag once', async () => {
+    h.fetchMock.mockImplementation(async (url: string) => {
+      const u = new URL(url);
+      if (u.searchParams.get('versionDescriptor.versionType') === 'branch') return response(404, 'TF401175: The version descriptor could not be resolved');
+      if (u.searchParams.get('path') === '/api/openapi.yaml') return response(200, ROOT_YAML);
+      if (u.searchParams.get('path') === '/api/schemas/payment.yaml') return response(200, PAYMENT_YAML);
+      return response(404, 'nope');
+    });
+    const res = await call('loadSpec', {}, { extension: { config } });
+    expect(res.ok).toBe(true);
+    expect(res.value.meta.fileCount).toBe(2);
+    const urls = h.fetchMock.mock.calls.map(([url]) => new URL(url as string));
+    // branch (404), then tag for the root, then tag straight away for the $ref
+    expect(urls.map((u) => u.searchParams.get('versionDescriptor.versionType'))).toEqual(['branch', 'tag', 'tag']);
+    expect(urls[0].pathname).toBe('/contoso/Fabrikam%20Fiber/_apis/git/repositories/payments/items');
+    const [, init] = h.fetchMock.mock.calls[0];
+    expect(init.headers.Authorization).toBe(`Basic ${Buffer.from(':pat-secret').toString('base64')}`);
+    expect(res.value.meta.sourceLink).toBe('https://dev.azure.com/contoso/Fabrikam%20Fiber/_git/payments?path=%2Fapi%2Fopenapi.yaml&version=GBv2.0');
+  });
+
+  it('treats a full SHA as a commit', async () => {
+    h.fetchMock.mockResolvedValue(response(200, SIMPLE_YAML));
+    const sha = 'a'.repeat(40);
+    await call('loadSpec', {}, { extension: { config: { ...config, gitRef: sha } } });
+    expect(new URL(h.fetchMock.mock.calls[0][0] as string).searchParams.get('versionDescriptor.versionType')).toBe('commit');
+  });
+
+  it('only allows PAT or no auth for Azure connections', async () => {
+    h.userConfluence.mockImplementation(async () => response(200, { operations: [{ operation: 'administer', targetType: 'application' }] }));
+    const base = { name: 'Contoso', provider: 'azure', apiBaseUrl: 'https://dev.azure.com', webBaseUrl: 'https://dev.azure.com', repos: ['contoso/Fabrikam Fiber/*'], spaceKeys: [], token: 'pat' };
+    expect((await call('adminSaveConnection', { connection: { ...base, authType: 'pat' } })).ok).toBe(true);
+    expect((await call('adminSaveConnection', { connection: { ...base, authType: 'bearer' } })).error?.code).toBe('BAD_REQUEST');
+  });
+});
+
+describe('SwaggerHub connections', () => {
+  beforeEach(async () => {
+    await h.memory.kvs.set('connections', [
+      { id: 's1', name: 'SwaggerHub', provider: 'swaggerhub', apiBaseUrl: 'https://api.swaggerhub.com', webBaseUrl: 'https://app.swaggerhub.com', authType: 'bearer', repos: ['acme/*'], spaceKeys: [], hasToken: true, createdAt: 'x', updatedAt: 'x' },
+    ]);
+    await h.memory.kvs.setSecret('connection-token:s1', 'sh-key');
+  });
+
+  it('looks up the default version and asks for the resolved definition', async () => {
+    h.fetchMock.mockImplementation(async (url: string) => {
+      if (url === 'https://api.swaggerhub.com/apis/acme/payments/settings/default') return response(200, { version: '2.1.0' });
+      if (url === 'https://api.swaggerhub.com/apis/acme/payments/2.1.0?resolved=true') return response(200, JSON.stringify({ openapi: '3.0.3', info: { title: 'Payments', version: '2.1.0' }, paths: {} }));
+      return response(404, 'nope');
+    });
+    const res = await call('loadSpec', {}, { extension: { config: { sourceType: 'git', gitConnectionId: 's1', gitRepo: 'acme/payments' } } });
+    expect(res.ok).toBe(true);
+    expect(res.value.summary.version).toBe('2.1.0');
+    expect(res.value.meta.sourceLink).toBe('https://app.swaggerhub.com/apis/acme/payments');
+    for (const [, init] of h.fetchMock.mock.calls) expect(init.headers.Authorization).toBe('Bearer sh-key');
+  });
+
+  it('skips the lookup when a version is set', async () => {
+    h.fetchMock.mockResolvedValue(response(200, JSON.stringify({ openapi: '3.0.3', info: { title: 'Payments', version: '1.0.0' }, paths: {} })));
+    await call('loadSpec', {}, { extension: { config: { sourceType: 'git', gitConnectionId: 's1', gitRepo: 'acme/payments', gitRef: '1.0.0' } } });
+    expect(h.fetchMock.mock.calls.map(([url]) => url)).toEqual(['https://api.swaggerhub.com/apis/acme/payments/1.0.0?resolved=true']);
+  });
+});
+
+describe('pasted links (macro autoconvert)', () => {
+  const link = 'https://github.com/acme/payments/blob/main/api/openapi.yaml';
+
+  it('shows the linked spec before the macro is configured, without listing it', async () => {
+    await seedGithub();
+    h.fetchMock.mockResolvedValue(response(200, SIMPLE_YAML));
+    const res = await call('loadSpec', {}, { extension: { config: {}, autoConvertLink: link } });
+    expect(res.ok).toBe(true);
+    expect(res.value.meta.autoConverted).toEqual({ sourceType: 'git', gitConnectionId: 'c1', gitRepo: 'acme/payments', gitRef: 'main', gitPath: 'api/openapi.yaml' });
+    expect(h.fetchMock.mock.calls[0][0]).toBe('https://api.github.com/repos/acme/payments/contents/api/openapi.yaml?ref=main');
+    expect([...h.memory.values.keys()].filter((k) => k.startsWith('api:'))).toEqual([]);
+  });
+
+  it('explains when no connection covers the link', async () => {
+    await seedGithub({ repos: ['other/*'] });
+    const res = await call('loadSpec', {}, { extension: { config: {}, autoConvertLink: link } });
+    expect(res.error).toMatchObject({ code: 'NOT_CONFIGURED', key: 'errors.autoConvertNoConnection', params: { repo: 'acme/payments', host: 'github.com' } });
+    expect(h.fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('respects space restrictions', async () => {
+    await seedGithub({ spaceKeys: ['OPS'] });
+    const res = await call('loadSpec', {}, { extension: { config: {}, autoConvertLink: link } });
+    expect(res.error?.key).toBe('errors.autoConvertNoConnection');
+  });
+
+  it('uses saved settings once there are some', async () => {
+    const res = await call('loadSpec', {}, { extension: { config: { sourceType: 'inline', inlineSpec: SIMPLE_YAML }, autoConvertLink: link } });
+    expect(res.value.meta.autoConverted).toBeUndefined();
+    expect(h.fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+const ASYNC_YAML = `asyncapi: 3.0.0
+info:
+  title: Account Service
+  version: 1.0.0
+channels:
+  userSignedup:
+    address: user/signedup
+    messages:
+      UserSignedUp:
+        payload:
+          type: object
+          properties:
+            email: { type: string, format: email }
+operations:
+  sendUserSignedup:
+    action: send
+    channel: { $ref: '#/channels/userSignedup' }
+    messages:
+      - $ref: '#/channels/userSignedup/messages/UserSignedUp'
+`;
+
+describe('AsyncAPI', () => {
+  it('parses on the backend and sends the stringified document', async () => {
+    await h.memory.kvs.set('settings', { tryItOutEnabled: true });
+    const res = await call('loadSpec', {}, { extension: { config: { sourceType: 'inline', inlineSpec: ASYNC_YAML, tryItOut: true } } });
+    expect(res.ok).toBe(true);
+    expect(res.value.summary.kind).toBe('asyncapi-3');
+    expect(res.value.summary.operations.map((o: { method: string; path: string }) => `${o.method} ${o.path}`)).toEqual(['SEND user/signedup']);
+    expect(res.value.tryItOutAllowed).toBe(false);
+    const doc = decode(res.value.specGz);
+    expect(doc['x-parser-spec-stringified']).toBe(true);
+    expect(doc.info.title).toBe('Account Service');
+  }, 20_000);
+
+  it('reports validation errors with their location', async () => {
+    const broken = ASYNC_YAML.replace("channel: { $ref: '#/channels/userSignedup' }", 'channel: 42');
+    const res = await call('loadSpec', {}, { extension: { config: { sourceType: 'inline', inlineSpec: broken } } });
+    expect(res.error).toMatchObject({ code: 'INVALID_SPEC', key: 'errors.asyncapiInvalid' });
+    expect(res.error?.detail).toContain('operations');
+  }, 20_000);
+
+  it('exports channels and operations to PDF', async () => {
+    const adf = await exportHandler({ exportType: 'pdf', config: { sourceType: 'inline', inlineSpec: ASYNC_YAML } as never, context: { extension: { content: { id: '123', type: 'page' } } } });
+    expect(JSON.stringify(adf)).toContain('user/signedup');
+  }, 20_000);
+});
+
+describe('editing attachments from the macro settings', () => {
+  const confluence = (fileSize: number) => async (path: string) => {
+    if (path.includes('/attachments?')) return response(200, { results: [{ id: 'att9', title: 'openapi.yaml', fileSize, version: { number: 4 } }] });
+    if (path.includes('/download')) return response(200, SIMPLE_YAML);
+    return response(404, {});
+  };
+
+  it('returns the raw text and version to licensed users', async () => {
+    h.userConfluence.mockImplementation(confluence(400));
+    const res = await call('readAttachment', { filename: 'openapi.yaml' });
+    expect(res.value).toEqual({ text: SIMPLE_YAML, version: 4 });
+    const list = await call('listAttachments', {});
+    expect(list.value[0]).toMatchObject({ title: 'openapi.yaml', version: 4 });
+  });
+
+  it('refuses guests and files too big to edit', async () => {
+    expect((await call('readAttachment', { filename: 'openapi.yaml' }, { account: 'anonymous' })).error?.code).toBe('FORBIDDEN');
+    h.userConfluence.mockImplementation(confluence(3_000_000));
+    expect((await call('readAttachment', { filename: 'openapi.yaml' })).error?.key).toBe('errors.editTooLarge');
+  });
+});
+
+describe('space API list', () => {
+  const inline = { sourceType: 'inline', inlineSpec: SIMPLE_YAML, title: 'Payments API' };
+  const spacePage = { type: 'confluence:spacePage', content: undefined, space: { key: 'ENG', id: '777' } };
+
+  it('records each saved macro once, and skips previews', async () => {
+    await call('loadSpec', {}, { extension: { config: inline } });
+    const entry = (await h.memory.kvs.get('api:777:123:macro-1')) as Record<string, unknown>;
+    expect(entry).toMatchObject({ spaceId: '777', contentId: '123', contentType: 'page', localId: 'macro-1', title: 'Payments API', kind: 'openapi-3.0', operationCount: 1, sourceLabel: '' });
+
+    const before = entry.updatedAt;
+    await new Promise((r) => setTimeout(r, 5));
+    await call('loadSpec', {}, { extension: { config: inline } });
+    expect(((await h.memory.kvs.get('api:777:123:macro-1')) as Record<string, unknown>).updatedAt).toBe(before);
+
+    await call('loadSpec', { preview: { ...inline, title: 'Draft' } }, { localId: 'macro-2' });
+    expect(await h.memory.kvs.get('api:777:123:macro-2')).toBeUndefined();
+  });
+
+  it('lists what the reader can see and prunes deleted pages and removed macros', async () => {
+    const entry = (contentId: string, title: string) => ({
+      spaceId: '777', contentId, contentType: 'page', localId: `m-${contentId}`, title, version: '1', kind: 'openapi-3.0',
+      operationCount: 3, sourceType: 'attachment', sourceLabel: 'openapi.yaml', fingerprint: 'f', updatedAt: new Date().toISOString(),
+    });
+    await h.memory.kvs.set('api:777:201:m-201', entry('201', 'Billing'));
+    await h.memory.kvs.set('api:777:202:m-202', entry('202', 'Macro removed'));
+    await h.memory.kvs.set('api:777:203:m-203', entry('203', 'Restricted'));
+    await h.memory.kvs.set('api:777:204:m-204', entry('204', 'Deleted'));
+    await h.memory.kvs.set('api:888:205:m-205', entry('205', 'Other space'));
+
+    const adf = (withMacro: boolean) => JSON.stringify({ type: 'doc', content: withMacro ? [{ type: 'extension', attrs: { extensionKey: 'abc/def/static/specpage-viewer', localId: 'x' } }] : [] });
+    h.userConfluence.mockImplementation(async () =>
+      response(200, { results: [{ id: '201', title: 'Billing page', body: { atlas_doc_format: { value: adf(true) } } }, { id: '202', title: 'Old page', body: { atlas_doc_format: { value: adf(false) } } }] }),
+    );
+    h.appConfluence.mockImplementation(async () => response(200, { results: [{ id: '203', title: 'Secret' }] }));
+
+    const res = await call('listSpaceApis', {}, { extension: spacePage });
+    expect(res.ok).toBe(true);
+    expect(res.value.spaceKey).toBe('ENG');
+    expect(res.value.apis.map((a: { title: string; pageTitle: string }) => `${a.title} @ ${a.pageTitle}`)).toEqual(['Billing @ Billing page']);
+
+    const userPath = String(h.userConfluence.mock.calls[0][0]);
+    expect(userPath).toBe('/wiki/api/v2/pages?id=201%2C202%2C203%2C204&limit=250&body-format=atlas_doc_format');
+    expect(String(h.appConfluence.mock.calls[0][0])).toBe('/wiki/api/v2/pages?id=203%2C204&limit=250');
+    expect([...h.memory.values.keys()].filter((k) => k.startsWith('api:')).sort()).toEqual(['api:777:201:m-201', 'api:777:203:m-203', 'api:888:205:m-205']);
+  });
+
+  it('needs a licensed user', async () => {
+    expect((await call('listSpaceApis', {}, { account: 'anonymous', extension: spacePage })).error?.key).toBe('errors.catalogLicensedOnly');
   });
 });

@@ -5,7 +5,7 @@ import { checkBudget } from '../budget';
 import type { SecureContext } from '../context';
 import { isLicensedUser } from '../context';
 import { fail } from '../errors';
-import { MAX_SOURCE_BYTES, MB } from '../limits';
+import { MAX_EDIT_BYTES, MAX_SOURCE_BYTES, MB } from '../limits';
 import { syntheticPath, syntheticUrl, type SpecSource } from './types';
 
 export interface V2Attachment {
@@ -98,6 +98,19 @@ export function attachmentSource(ctx: SecureContext, filename: string, options: 
   };
 }
 
+/** Text of an attachment for the in-dialog editor, with its version so saves can spot conflicts. */
+export async function readAttachmentForEditing(ctx: SecureContext, filename: string): Promise<{ text: string; version?: number }> {
+  if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'errors.editorOnly');
+  if (!filename || !isSpecFilename(filename)) fail('BAD_REQUEST', 'errors.attachmentNotChosen');
+  const attachment = await findAttachment(ctx, filename);
+  if (attachment.fileSize && attachment.fileSize > MAX_EDIT_BYTES) {
+    fail('TOO_LARGE', 'errors.editTooLarge', { name: filename, size: MAX_EDIT_BYTES / MB });
+  }
+  const text = await downloadAttachment(ctx, attachment);
+  if (text.length > MAX_EDIT_BYTES) fail('TOO_LARGE', 'errors.editTooLarge', { name: filename, size: MAX_EDIT_BYTES / MB });
+  return { text, version: attachment.version?.number };
+}
+
 export async function listSpecAttachments(ctx: SecureContext): Promise<AttachmentOption[]> {
   if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'errors.editorOnly');
   const res = await asUser().requestConfluence(attachmentsRoute(ctx, { limit: 250 }), { headers: { Accept: 'application/json' } });
@@ -105,6 +118,6 @@ export async function listSpecAttachments(ctx: SecureContext): Promise<Attachmen
   const body = (await res.json()) as { results?: V2Attachment[] };
   return (body.results ?? [])
     .filter((a) => isSpecFilename(a.title))
-    .map((a) => ({ title: a.title, mediaType: a.mediaType, fileSize: a.fileSize }))
+    .map((a) => ({ title: a.title, mediaType: a.mediaType, fileSize: a.fileSize, version: a.version?.number }))
     .sort((a, b) => a.title.localeCompare(b.title));
 }

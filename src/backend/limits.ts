@@ -14,3 +14,6 @@ export const MAX_ENCODED_SPEC_BYTES = 4_500_000;
 
 /** Pasted specs live in the page's macro parameters. */
 export const MAX_INLINE_CHARS = 100_000;
+
+/** Largest attachment the config dialog will open in its editor (Forge responses are capped at 5 MB). */
+export const MAX_EDIT_BYTES = 2 * MB;

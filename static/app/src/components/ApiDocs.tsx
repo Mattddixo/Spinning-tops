@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import SwaggerUI from 'swagger-ui-react';
 import 'swagger-ui-react/swagger-ui.css';
 import '../styles/swagger-theme.css';
@@ -105,8 +105,56 @@ function proxyFetch(t: Translate, preview?: MacroConfig) {
   };
 }
 
+// OAuth flows that need a sign-in pop-up (authorization code, implicit,
+// OpenID Connect) can't complete inside Confluence's sandboxed iframe, and
+// Swagger UI has no field to paste a token for them. Readers can paste one
+// here instead; it's added as a Bearer header when a request has none.
+function oauthSchemes(spec: Record<string, unknown>): string[] {
+  const components = spec.components as { securitySchemes?: Record<string, { type?: string }> } | undefined;
+  const swagger2 = spec.securityDefinitions as Record<string, { type?: string }> | undefined;
+  const schemes = { ...(components?.securitySchemes ?? {}), ...(swagger2 ?? {}) };
+  return Object.entries(schemes)
+    .filter(([, s]) => s && (s.type === 'oauth2' || s.type === 'openIdConnect'))
+    .map(([name]) => name);
+}
+
+function TokenBar({ onChange }: { onChange: (token: string) => void }) {
+  const t = useT();
+  const id = useId();
+  const [value, setValue] = useState('');
+  return (
+    <div className="sp-token-bar">
+      <label className="sp-label" htmlFor={id}>
+        {t('ui.docs.tokenLabel')}
+      </label>
+      <div className="sp-row sp-row-nowrap">
+        <input
+          id={id}
+          className="sp-input"
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={t('ui.docs.tokenPlaceholder')}
+          aria-describedby={`${id}-help`}
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value);
+            onChange(e.target.value.trim().replace(/^Bearer\s+/i, ''));
+          }}
+        />
+      </div>
+      <span id={`${id}-help`} className="sp-help">
+        {t('ui.docs.tokenHelp')}
+      </span>
+    </div>
+  );
+}
+
 export function ApiDocs({ spec, config, tryItOutAllowed, preview }: ApiDocsProps) {
   const t = useT();
+  // Kept in a ref: changing it must not re-render (and reset) Swagger UI.
+  const pastedToken = useRef('');
+  const needsTokenBar = useMemo(() => tryItOutAllowed && oauthSchemes(spec).length > 0, [spec, tryItOutAllowed]);
   const prepared = useMemo(() => {
     const filtered = filterSpec(spec, { includeTags: config.includeTags, includePaths: config.includePaths, hideDeprecated: config.hideDeprecated });
     const serverUrl = config.serverUrl?.trim();
@@ -118,7 +166,13 @@ export function ApiDocs({ spec, config, tryItOutAllowed, preview }: ApiDocsProps
   const requestInterceptor = useMemo(() => {
     const userFetch = proxyFetch(t, preview);
     return (req: Record<string, unknown>) => {
-      (req as SwaggerRequest).userFetch = userFetch as SwaggerRequest['userFetch'];
+      const request = req as SwaggerRequest;
+      request.userFetch = userFetch as SwaggerRequest['userFetch'];
+      const token = pastedToken.current;
+      if (token) {
+        request.headers ??= {};
+        if (!Object.keys(request.headers).some((k) => k.toLowerCase() === 'authorization')) request.headers.Authorization = `Bearer ${token}`;
+      }
       return req;
     };
   }, [t, preview]);
@@ -134,6 +188,7 @@ export function ApiDocs({ spec, config, tryItOutAllowed, preview }: ApiDocsProps
 
   return (
     <div className={classes}>
+      {needsTokenBar ? <TokenBar onChange={(token) => (pastedToken.current = token)} /> : null}
       <SwaggerUI
         spec={prepared}
         docExpansion={config.docExpansion ?? 'list'}

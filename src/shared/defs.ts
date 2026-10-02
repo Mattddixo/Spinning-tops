@@ -1,6 +1,7 @@
 import type {
   AppSettings,
   AuditEntryView,
+  ApiListItem,
   AttachmentOption,
   ConnectionOption,
   GitConnection,
@@ -17,12 +18,17 @@ export type Defs = {
   // preview = unsaved settings from the config modal
   loadSpec: (args: { preview?: MacroConfig; refresh?: boolean }) => Result<LoadSpecResponse>;
   listAttachments: () => Result<AttachmentOption[]>;
+  /** Raw attachment text for the config dialog's editor (licensed users only). */
+  readAttachment: (args: { filename: string }) => Result<{ text: string; version?: number }>;
   getEditorOptions: () => Result<{
     connections: ConnectionOption[];
     urlSourcesEnabled: boolean;
     tryItOutEnabled: boolean;
   }>;
   proxyRequest: (args: { request: ProxyRequest; preview?: MacroConfig }) => Result<ProxyResponse>;
+
+  /** APIs documented in a space, filtered to pages the reader can see (space page module). */
+  listSpaceApis: () => Result<{ spaceKey?: string; apis: ApiListItem[] }>;
 
   adminGetState: () => Result<{ settings: AppSettings; connections: GitConnection[] }>;
   adminSaveSettings: (args: { settings: AppSettings }) => Result<AppSettings>;
@@ -31,7 +37,8 @@ export type Defs = {
   adminTestConnection: (args: {
     id: string;
     repo: string;
-    path: string;
+    /** Not used for SwaggerHub. */
+    path?: string;
     ref?: string;
   }) => Result<{ title: string; version: string; operationCount: number; fileCount: number }>;
   adminClearCache: () => Result<{ cleared: boolean }>;

@@ -239,3 +239,10 @@ html[data-color-mode='dark'] .sp-docs .swagger-ui .json-schema-2020-12__attribut
 html[data-color-mode='dark'] .sp-docs .swagger-ui .json-schema-2020-12-keyword__name--secondary {
   color: var(--sp-text-subtle);
 }
+
+.sp-token-bar {
+  display: grid;
+  gap: var(--sp-space-050, 4px);
+  margin: var(--sp-space-100, 8px) 0 var(--sp-space-200, 16px);
+  max-width: 640px;
+}

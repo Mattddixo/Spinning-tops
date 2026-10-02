@@ -1,14 +1,17 @@
 import { notice } from '../shared/messages';
-import { resolveServers, summarizeSpec } from '../shared/spec';
+import { isAsyncApi, resolveServers, summarizeSpec } from '../shared/spec';
+import { parseAsyncApi } from './asyncapi';
 import type { AppSettings, LoadSpecResponse, MacroConfig } from '../shared/types';
 import { loadAndBundle } from './bundle';
 import { readCache, writeCache, type CachedSpec } from './cache';
 import { isLicensedUser, requireLicense, type SecureContext } from './context';
-import { encodeSpec } from './encoding';
+import { encodeJsonText, encodeSpec } from './encoding';
 import { fail } from './errors';
 import { MAX_INLINE_CHARS } from './limits';
 import { attachmentSource } from './sources/attachment';
+import { hostOf, matchConnection, parseGitFileLink } from '../shared/git';
 import { gitSource } from './sources/git';
+import { getConnections } from './store';
 import { isSyntheticUrl, syntheticUrl, type SpecSource } from './sources/types';
 import { urlSource } from './sources/url';
 import { getSettings } from './store';
@@ -70,6 +73,17 @@ export async function selectSource(
 export async function buildSpec(source: SpecSource, settings: AppSettings, rootText?: string): Promise<CachedSpec & { spec: Record<string, unknown> }> {
   const bundled = await loadAndBundle(source, { allowExternalUrls: settings.urlSourcesEnabled, rootText });
   const warnings = [...bundled.warnings];
+  if (isAsyncApi(bundled.summary.kind)) {
+    return {
+      spec: bundled.spec,
+      specGz: encodeJsonText(await parseAsyncApi(bundled.spec)),
+      summary: bundled.summary,
+      fileCount: bundled.fileCount,
+      warnings,
+      serversResolvable: true,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
   // Only URL sources have a real location to resolve relative servers against.
   const specUrl = isSyntheticUrl(source.baseUrl) ? undefined : source.baseUrl;
   const servers = resolveServers(bundled.spec, bundled.summary.kind, specUrl);
@@ -86,12 +100,38 @@ export async function buildSpec(source: SpecSource, settings: AppSettings, rootT
   };
 }
 
+/**
+ * A macro inserted by pasting a link has no saved settings yet, only the link
+ * (from the Forge context, so it can be trusted). Work out the Git or
+ * SwaggerHub settings it stands for so the docs show straight away.
+ */
+export async function configFromLink(ctx: SecureContext, link: string): Promise<MacroConfig> {
+  const parsed = parseGitFileLink(link);
+  if (!parsed) return fail('NOT_CONFIGURED', 'errors.notConfigured', undefined, { hint: 'hints.editToConfigure' });
+  const connections = (await getConnections())
+    .filter((c) => !c.spaceKeys.length || (ctx.spaceKey !== undefined && c.spaceKeys.includes(ctx.spaceKey)))
+    .map((c) => ({ ...c, webHost: hostOf(c.webBaseUrl) }));
+  const connection = matchConnection(parsed, connections);
+  if (!connection) {
+    return fail('NOT_CONFIGURED', 'errors.autoConvertNoConnection', { repo: parsed.repo, host: parsed.host }, { hint: 'hints.askAdminAddRepo' });
+  }
+  return {
+    sourceType: 'git',
+    gitConnectionId: connection.id,
+    gitRepo: parsed.repo,
+    ...(parsed.ref ? { gitRef: parsed.ref } : {}),
+    ...(parsed.path ? { gitPath: parsed.path } : {}),
+  };
+}
+
 export async function loadSpec(
   ctx: SecureContext,
-  config: MacroConfig,
+  savedConfig: MacroConfig,
   options: { refresh?: boolean } = {},
 ): Promise<LoadSpecResponse> {
   requireLicense(ctx);
+  const autoConverted = !savedConfig.sourceType && Boolean(ctx.autoConvertLink);
+  const config = autoConverted ? { ...savedConfig, ...(await configFromLink(ctx, ctx.autoConvertLink as string)) } : savedConfig;
   const settings = await getSettings();
   const { source, rootText } = await selectSource(ctx, config, settings);
   // only licensed users can skip the cache
@@ -123,7 +163,8 @@ export async function loadSpec(
   return {
     specGz: result.specGz,
     summary: result.summary,
-    tryItOutAllowed,
+    // AsyncAPI has no request runner.
+    tryItOutAllowed: tryItOutAllowed && !isAsyncApi(result.summary.kind),
     meta: {
       sourceLabel: source.label,
       sourceLink: source.link,
@@ -132,6 +173,7 @@ export async function loadSpec(
       fileCount: result.fileCount,
       warnings,
       serversResolvable: result.serversResolvable,
+      ...(autoConverted ? { autoConverted: config } : {}),
     },
   };
 }
