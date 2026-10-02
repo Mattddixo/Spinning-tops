@@ -1,10 +1,4 @@
 {
-  "manifest": {
-    "macroTitle": "OpenAPI / Swagger docs (SpecPage)",
-    "macroDescription": "Interactive API docs from an OpenAPI or Swagger spec: page attachment, Git, URL or pasted text.",
-    "configTitle": "Configure API documentation",
-    "settingsTitle": "SpecPage settings"
-  },
   "errors": {
     "generic": "Something went wrong. Please try again.",
     "backendUnreachable": "SpecPage could not reach its backend. Reload the page and try again.",

@@ -25,7 +25,6 @@ If the spec is split into multiple files with relative `$ref`s, those get pulled
 - Guests and anonymous users on public spaces can read the docs
 - Follows Confluence light/dark theme
 - Git and URL specs are cached (5 min to 24 h, set by the admin)
-- English, German, French, Spanish and Japanese, following each user's Confluence language
 - The settings page keeps an activity log: who changed settings, connections or approved hosts, and when (last 200 changes)
 
 ## Security notes
@@ -44,7 +43,7 @@ manifest.yml        Forge manifest
 src/index.ts        resolver + export handler
 src/backend/        loading specs, Git/attachment/URL sources, $ref bundling, cache, proxy, admin
 src/shared/         types and logic used by both backend and UI
-locales/            UI text, one JSON file per language (en-US is the source)
+locales/            all UI and error text (English), looked up by key
 static/app/         the UI (Vite + React + Swagger UI): macro, config dialog, admin page
 test/               unit tests (Vitest)
 e2e/                browser tests (Playwright) with a fake Forge bridge and a strict CSP
@@ -81,11 +80,9 @@ npm run test:e2e     # browser tests; set PLAYWRIGHT_CHROMIUM_PATH if Playwright
 
 If you change permissions in manifest.yml, run `forge install --upgrade` after deploying.
 
-## Translations
+## UI text
 
-`locales/en-US.json` is the source. The other files were translated without a native speaker check, so a review by one is worth doing before a big launch. `npm test` fails if a language file is missing a key, has an extra one, or drops a `{placeholder}`. To add a language, add the file and list it under `translations` in manifest.yml.
-
-Swagger UI's own labels ("Try it out", "Execute", "Responses") stay in English; Swagger UI has no translation support. PDF/Word exports are also English for now.
+All text shown to users is in `locales/en-US.json`. Backend errors are sent with a key and parameters as well as the English message, so translating later means adding catalogs, not changing code. `npm test` fails if the code uses a key the file doesn't have, or the file has keys nothing uses.
 
 ## Limits / not supported yet
 

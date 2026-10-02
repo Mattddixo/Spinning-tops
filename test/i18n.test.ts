@@ -15,37 +15,20 @@ function flatten(node: Catalog, prefix = '', out = new Map<string, string>()) {
   return out;
 }
 
-const placeholders = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
 const english = flatten(readCatalog('en-US.json'));
-const manifest = readFileSync(join(root, 'manifest.yml'), 'utf8');
-const locales = [...manifest.matchAll(/- key: ([a-z]{2}-[A-Z]{2})\n\s+path: (locales\/\S+\.json)/g)].map((m) => ({ key: m[1], path: m[2] }));
-
-describe('translation catalogs', () => {
-  it('registers every catalog in the manifest', () => {
-    const files = readdirSync(join(root, 'locales')).filter((f) => f.endsWith('.json'));
-    expect(locales.map((l) => l.path.replace('locales/', '')).sort()).toEqual(files.sort());
-    expect(locales.map((l) => l.key)).toContain('en-US');
-  });
-
+describe('UI text catalog', () => {
   it('nests keys instead of putting dots in them', () => {
     // lookup() walks nested objects, so "a": { "b.c": ... } would never be found as a.b.c.
     const dotted = (node: Catalog, path: string): string[] =>
       Object.entries(node).flatMap(([k, v]) => [...(k.includes('.') ? [`${path}${k}`] : []), ...(typeof v === 'string' ? [] : dotted(v, `${path}${k}.`))]);
-    for (const { path } of locales) expect(dotted(readCatalog(path.replace('locales/', '')), ''), path).toEqual([]);
+    expect(dotted(readCatalog('en-US.json'), '')).toEqual([]);
   });
 
-  for (const { key } of locales.filter((l) => l.key !== 'en-US')) {
-    it(`${key} has the same keys and placeholders as English`, () => {
-      const catalog = flatten(readCatalog(`${key}.json`));
-      expect([...catalog.keys()].sort()).toEqual([...english.keys()].sort());
-      for (const [k, v] of english) {
-        expect(placeholders(catalog.get(k) ?? ''), `${key} ${k}`).toEqual(placeholders(v));
-        expect(catalog.get(k)?.trim(), `${key} ${k}`).toBeTruthy();
-      }
-    });
-  }
+  it('has no empty strings', () => {
+    expect([...english].filter(([, v]) => !v.trim()).map(([k]) => k)).toEqual([]);
+  });
 
-  it('defines every key the code uses', () => {
+  it('defines every key the code uses, and nothing unused', () => {
     const files: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
@@ -60,9 +43,11 @@ describe('translation catalogs', () => {
     for (const file of files) {
       for (const m of readFileSync(file, 'utf8').matchAll(/["'`]((?:errors|hints|warnings|ui)\.[A-Za-z0-9_.]+)["'`]/g)) used.add(m[1]);
     }
-    for (const m of manifest.matchAll(/i18n: (\S+)/g)) used.add(m[1]);
     expect(used.size).toBeGreaterThan(100);
     expect([...used].filter((k) => !english.has(k))).toEqual([]);
+    // ui.audit.* and ui.provider.* are built from data (`ui.audit.${action}`).
+    const dynamic = /^ui\.(audit|provider)\./;
+    expect([...english.keys()].filter((k) => !used.has(k) && !dynamic.test(k))).toEqual([]);
   });
 });
 

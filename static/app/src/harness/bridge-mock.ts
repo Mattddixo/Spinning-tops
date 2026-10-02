@@ -6,8 +6,6 @@ interface HarnessConfig {
   context?: Record<string, unknown>;
   resolvers?: Record<string, Handler>;
   egress?: Array<{ key: string; description: string; configured: Array<{ domain: string; type: string[] }> }>;
-  /** What i18n.getTranslations() returns; English fallback is used when omitted. */
-  translations?: { locale: string; translations: Record<string, unknown> };
 }
 
 declare global {
@@ -69,10 +67,6 @@ export const view = {
       }
     },
   },
-};
-
-export const i18n = {
-  getTranslations: async () => harness().translations ?? { locale: 'en-US', translations: {} },
 };
 
 export const router = { open: async () => undefined, navigate: async () => undefined };

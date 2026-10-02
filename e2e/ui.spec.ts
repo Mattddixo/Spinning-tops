@@ -1,9 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { buildSearchText, filterSpec, summarizeSpec } from '../src/shared/spec';
 
-const catalog = (locale: string) => JSON.parse(readFileSync(join(__dirname, '..', 'locales', `${locale}.json`), 'utf8')) as Record<string, unknown>;
 
 const SPEC = {
   openapi: '3.1.0',
@@ -60,7 +57,6 @@ type Setup = {
   loadError?: Record<string, unknown>;
   spec?: Record<string, unknown>;
   meta?: Record<string, unknown>;
-  translations?: { locale: string; translations: Record<string, unknown> };
   audit?: unknown[];
 };
 
@@ -93,7 +89,6 @@ async function installHarness(page: Page, setup: Setup = {}) {
       };
       w.__SPECPAGE_HARNESS__ = {
         context: { extension: { config: setup.config ?? {}, isEditing: setup.isEditing === true } },
-        translations: setup.translations,
         egress: [{ key: 'specpage-git-hosts', description: 'git', configured: [{ domain: 'https://api.github.com', type: ['FETCH_BACKEND_SIDE'] }] }],
         resolvers: {
           loadSpec: async () =>
@@ -355,16 +350,6 @@ test('macro does not flag search text that matches the spec', async ({ page }) =
   // /refunds is deprecated, which Swagger UI renders with a different path class.
   await expect(page.locator('.opblock-summary').first()).toBeVisible();
   await expect(page.getByText('Confluence search still uses', { exact: false })).toHaveCount(0);
-});
-
-test('UI and backend errors follow the user\'s language', async ({ page }) => {
-  const de = catalog('de-DE');
-  await installHarness(page, { loadError: EGRESS_ERROR, translations: { locale: 'de-DE', translations: de } });
-  await page.goto('/macro.html');
-  const errors = de.errors as Record<string, string>;
-  const common = (de.ui as Record<string, Record<string, string>>).common;
-  await expect(page.getByText(errors.egressNotApproved.replace('{host}', 'api.github.com'))).toBeVisible();
-  await expect(page.getByRole('button', { name: common.retry })).toBeVisible();
 });
 
 test('config modal saves a server URL and validates it', async ({ page }) => {

@@ -1,37 +1,25 @@
-import { i18n } from '@forge/bridge';
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, type ReactNode } from 'react';
 import en from '../../../locales/en-US.json';
 import { createTranslate, type Catalog, type Params, type Translate } from '../../../src/shared/i18n';
 import type { AppError, Notice } from '../../../src/shared/types';
 
-// English ships with the bundle so text is right even before (or without)
-// Forge returning the user's catalog.
-const english = en as Catalog;
-
+// All UI text lives in locales/en-US.json and is looked up by key. Only English
+// ships for now; adding a language means loading another catalog here (and
+// registering it under `translations` in manifest.yml).
 interface I18nValue {
   t: Translate;
+  /** Used for number and date formatting only. */
   locale: string;
 }
 
-const I18nContext = createContext<I18nValue>({ t: createTranslate(english), locale: 'en-US' });
+const value: I18nValue = {
+  t: createTranslate(en as Catalog),
+  locale: typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'en-US',
+};
+
+const I18nContext = createContext<I18nValue>(value);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<{ catalog: Catalog | null; locale: string }>({ catalog: null, locale: 'en-US' });
-
-  useEffect(() => {
-    let cancelled = false;
-    i18n
-      .getTranslations()
-      .then((res) => {
-        if (!cancelled && res?.translations) setState({ catalog: res.translations as Catalog, locale: res.locale ?? 'en-US' });
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const value = useMemo(() => ({ t: createTranslate(state.catalog, english), locale: state.locale }), [state]);
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
