@@ -34,6 +34,11 @@ const SUSPECTS = [
     for (const f of m.modules.function) delete f.runtime;
   }],
   ['ARM64 runtime architecture', (m) => delete m.app.runtime.architecture],
+  ['Node.js 24 runtime (falls back to 22)', (m) => (m.app.runtime.name = 'nodejs22.x')],
+  ['Scopes beyond app storage', (m) => (m.permissions.scopes = ['storage:app'])],
+  ['Macro settings dialog', (m) => delete macro(m).config],
+  ['Macro ready event', (m) => delete macro(m).emitsReadyEvent],
+  ['Macro category', (m) => delete macro(m).category],
 ];
 
 function manifestWithout(removed) {
@@ -83,7 +88,8 @@ try {
   if (first.deployFailed) throw new Error('The stripped-down app failed to deploy; see the output above.');
   if (!first.ok) {
     results.push('Even the stripped-down app fails to install, so the cause is not one of the listed features.');
-    results.push('That points at the Atlassian account or app registration. Contact Atlassian support with the request ID above.');
+    results.push('That points at the Atlassian account or app registration. Try a brand-new app from a template');
+    results.push('(forge create), and contact Atlassian support with the request ID above.');
   } else {
     results.push('Stripped-down app: installed OK.');
     for (const [name] of SUSPECTS) {
