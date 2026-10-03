@@ -33,10 +33,13 @@ const sideLabel = (label: string, version: string) => (version ? `${label} (v${v
 // Markdown for release notes. Spec text goes in code spans, with backticks
 // stripped so a property name can't break out of them.
 const code = (text: string) => `\`${text.replace(/`/g, "'")}\``;
+// Plain text that may contain spec values (enum values, type names, version
+// labels): escape the characters Markdown would treat as formatting.
+const text = (value: string) => value.replace(/[\\`*_[\]<>|~]/g, '\\$&');
 
 export function changesMarkdown(t: Translate, result: CompareResponse): string {
-  const base = sideLabel(result.baseLabel, result.baseVersion);
-  const head = sideLabel(result.headLabel, result.headVersion);
+  const base = text(sideLabel(result.baseLabel, result.baseVersion));
+  const head = text(sideLabel(result.headLabel, result.headVersion));
   const lines = [`# ${t('ui.changes.reportTitle', { base, head })}`, ''];
   if (!result.changes.length) lines.push(t('ui.changes.none'), '');
   for (const level of LEVELS) {
@@ -45,7 +48,7 @@ export function changesMarkdown(t: Translate, result: CompareResponse): string {
     lines.push(`## ${levelHeading(t, level)} (${items.length})`, '');
     for (const c of items) {
       const where = changeWhere(t, c);
-      lines.push(`- ${c.operation ? `${code(c.operation)} ` : ''}${changeText(t, c)}${where ? `: ${code(where)}` : ''}`);
+      lines.push(`- ${c.operation ? `${code(c.operation)} ` : ''}${text(changeText(t, c))}${where ? `: ${code(where)}` : ''}`);
     }
     lines.push('');
   }

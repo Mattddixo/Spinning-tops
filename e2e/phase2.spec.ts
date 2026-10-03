@@ -270,11 +270,12 @@ const COMPARE = {
   headLabel: 'acme/payments@main: openapi.yaml',
   headVersion: '2.4.0',
   truncated: false,
-  counts: { breaking: 2, warning: 1, info: 1 },
+  counts: { breaking: 2, warning: 2, info: 1 },
   changes: [
     { level: 'breaking', code: 'operationRemoved', operation: 'DELETE /payments/{id}' },
     { level: 'breaking', code: 'typeChanged', operation: 'GET /payments', section: 'response', status: '200', location: '[].amount', params: { from: 'integer', to: 'string' } },
     { level: 'warning', code: 'operationDeprecated', operation: 'GET /refunds' },
+    { level: 'warning', code: 'enumValueAdded', operation: 'GET /payments', section: 'response', status: '200', location: '[].status', params: { value: '"*held*"' } },
     { level: 'info', code: 'parameterAdded', operation: 'GET /payments', location: 'cursor (query)' },
   ],
 };
@@ -297,6 +298,8 @@ test('signed-in readers can compare a Git spec with an earlier ref', async ({ pa
   const text = await (await file.createReadStream()).toArray().then((chunks) => Buffer.concat(chunks).toString('utf8'));
   expect(text).toContain('## Breaking (2)');
   expect(text).toContain('- `DELETE /payments/{id}` Operation removed');
+  // Spec values are escaped so they can't turn into Markdown formatting.
+  expect(text).toContain('Allowed value "\\*held\\*" added');
   expect(await cspViolations(page)).toEqual([]);
   expect(errors).toEqual([]);
   await page.screenshot({ path: 'test-results/changes.png', fullPage: true });
@@ -475,4 +478,40 @@ test("Try it out tells readers it isn't available rather than asking for an admi
   await page.getByRole('button', { name: 'Execute' }).click();
   await expect(page.getByText("Try it out isn't available right now.").first()).toBeVisible();
   await expect(page.getByText("doesn't have the approved host lists")).toHaveCount(0);
+});
+
+test('the URL host warning only counts the spec hosts list', async ({ page }) => {
+  await installHarness(page, { editorOptions: { connections: [], urlSourcesEnabled: true, tryItOutEnabled: true } });
+  await page.addInitScript(() => {
+    const h = (window as unknown as { __SPECPAGE_HARNESS__: Harness & { egress: unknown[] } }).__SPECPAGE_HARNESS__;
+    h.egress = [
+      { key: 'specpage-spec-hosts', description: 'specs', configured: [{ domain: 'https://docs.example.com', type: ['FETCH_BACKEND_SIDE'] }] },
+      { key: 'specpage-api-hosts', description: 'apis', configured: [{ domain: 'https://api.example.com', type: ['FETCH_BACKEND_SIDE'] }] },
+    ];
+  });
+  await page.goto('/config.html');
+  await page.getByRole('radio', { name: /URL/ }).click();
+  const url = page.getByLabel('Spec URL');
+  await url.fill('https://api.example.com/openapi.yaml');
+  await expect(page.getByText("This host isn't on the approved spec hosts list.")).toBeVisible();
+  await url.fill('https://docs.example.com/openapi.yaml');
+  await expect(page.getByText("This host isn't on the approved spec hosts list.")).toHaveCount(0);
+});
+
+test('the preview only skips the cache on its first load, not on every edit', async ({ page }) => {
+  await installHarness(page, {});
+  await page.goto('/config.html');
+  await page.getByRole('radio', { name: /Git or SwaggerHub/ }).click();
+  await page.getByLabel('Paste a link to the file (optional)').fill('https://github.com/acme/payments/blob/main/api/openapi.yaml');
+  await page.getByRole('button', { name: 'Fill in' }).click();
+  await expect(page.locator('.sp-config-preview .opblock-summary-path').first()).toBeVisible();
+  await page.getByLabel('File path').fill('api/other.yaml');
+  const loads = async () =>
+    (await page.evaluate(() => (window as unknown as { __SPECPAGE_CALLS__: Array<{ fn: string; payload: { refresh?: boolean } }> }).__SPECPAGE_CALLS__))
+      .filter((c) => c.fn === 'loadSpec')
+      .map((c) => c.payload.refresh === true);
+  await expect.poll(async () => (await loads()).length).toBeGreaterThanOrEqual(2);
+  const seen = await loads();
+  expect(seen[0]).toBe(true);
+  expect(seen.slice(1).every((r) => !r)).toBe(true);
 });

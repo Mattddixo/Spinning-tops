@@ -1,6 +1,6 @@
 import { permissions, view } from '@forge/bridge';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { isValidRef, isValidRepo, matchConnection, normaliseRepoPath, parseGitFileLink, PROVIDERS, usesFilePath } from '../../../../src/shared/git';
+import { hostCovered, isValidRef, isValidRepo, matchConnection, normaliseRepoPath, parseGitFileLink, PROVIDERS, usesFilePath } from '../../../../src/shared/git';
 import { buildSearchText, filterSpec, isAsyncApi, summarizeSpec } from '../../../../src/shared/spec';
 import type { Translate } from '../../../../src/shared/i18n';
 import type {
@@ -13,6 +13,7 @@ import type {
   SourceType,
 } from '../../../../src/shared/types';
 import { appError } from '../../../../src/shared/messages';
+import { EGRESS_GROUPS } from '../../../../src/shared/types';
 import { call, invoke, RequestFailed, toAppError } from '../api';
 import { mount } from '../bootstrap';
 import { QualityReport } from '../components/QualityReport';
@@ -129,6 +130,11 @@ function ConfigApp() {
   const [contentId, setContentId] = useState<string>();
   // Bumped when the selected attachment's content changes (same name, new version).
   const [previewNonce, setPreviewNonce] = useState(0);
+  // The preview skips the cache for its first load (so editors see the latest
+  // version when they open the dialog) and after an attachment changes, but
+  // not on every edit: that would refetch from Git each time and could use up
+  // a provider's rate limit.
+  const refreshedFor = useRef<number | undefined>(undefined);
   const [gitLinkError, setGitLinkError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string>();
@@ -170,9 +176,10 @@ function ConfigApp() {
         setOptions({ connections: [], urlSourcesEnabled: false, tryItOutEnabled: false });
       });
     void loadAttachments();
+    // Only the spec list: URL sources are refused for hosts approved for other purposes.
     permissions.egress
-      .get({})
-      .then((res) => setApprovedHosts(res.results.flatMap((g) => g.configured.map((c) => c.domain))))
+      .get({ keys: [EGRESS_GROUPS.specs] })
+      .then((res) => setApprovedHosts(res.results.filter((g) => g.key === EGRESS_GROUPS.specs).flatMap((g) => g.configured.map((c) => c.domain))))
       .catch(() => setApprovedHosts(undefined));
   }, [loadAttachments]);
 
@@ -203,7 +210,9 @@ function ConfigApp() {
     setPreview({ status: 'loading' });
     const timer = setTimeout(async () => {
       try {
-        const data = await call(invoke('loadSpec', { preview: cleanConfig(current), refresh: true }));
+        const refresh = refreshedFor.current !== previewNonce;
+        refreshedFor.current = previewNonce;
+        const data = await call(invoke('loadSpec', { preview: cleanConfig(current), ...(refresh ? { refresh: true } : {}) }));
         const spec = await decodeSpec(data.specGz).catch((err: unknown) => {
           throw new RequestFailed(appError('INTERNAL', 'ui.macro.decodeFailed', undefined, { detail: err instanceof Error ? err.message : String(err) }));
         });
@@ -230,12 +239,11 @@ function ConfigApp() {
   const urlHostApproved = useMemo(() => {
     if (config?.sourceType !== 'url' || !approvedHosts) return true;
     try {
-      const origin = new URL(config.url ?? '').origin;
-      const host = new URL(config.url ?? '').hostname;
-      return approvedHosts.some((d) => d === origin || d === host || (d.startsWith('*.') && host.endsWith(d.slice(1))) || d === '*');
+      new URL(config.url ?? '');
     } catch {
-      return true;
+      return true; // the field shows its own "invalid URL" message
     }
+    return hostCovered(config.url ?? '', approvedHosts);
   }, [config?.sourceType, config?.url, approvedHosts]);
 
   const applyGitLink = () => {

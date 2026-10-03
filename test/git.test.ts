@@ -4,6 +4,7 @@ import {
   bitbucketSrcUrl,
   githubContentsUrl,
   gitlabRawUrl,
+  hostCovered,
   isValidRef,
   isValidRepo,
   matchConnection,
@@ -192,5 +193,21 @@ describe('matchConnection', () => {
   it("never loads a github.com link from an Enterprise server with a same-named repo", () => {
     const link = parseGitFileLink('https://github.com/platform/api/blob/main/openapi.yaml');
     expect(link && matchConnection(link, connections)).toBeUndefined();
+  });
+});
+
+describe('hostCovered (advisory, mirrors Forge egress matching)', () => {
+  it('matches origins, bare hosts, paths and wildcards like Forge', () => {
+    const list = ['https://docs.example.com', 'specs.example.org', 'https://cdn.example.net/specs/', '*.corp.example', 'https://ported.example.com:8443'];
+    expect(hostCovered('https://docs.example.com/a.yaml', list)).toBe(true);
+    expect(hostCovered('https://specs.example.org/a.yaml', list)).toBe(true);
+    expect(hostCovered('https://cdn.example.net/other/a.yaml', list)).toBe(true);
+    expect(hostCovered('https://a.corp.example/x', list)).toBe(true);
+    expect(hostCovered('https://ported.example.com:8443/x', list)).toBe(true);
+    for (const url of ['https://corp.example/x', 'http://docs.example.com/a', 'https://docs.example.com.evil.com/', 'https://ported.example.com/x', 'not a url']) {
+      expect(hostCovered(url, list)).toBe(false);
+    }
+    expect(hostCovered('https://anything.example/', ['*'])).toBe(false);
+    expect(hostCovered('https://docs.example.com/', ['http://docs.example.com'])).toBe(false);
   });
 });

@@ -300,3 +300,30 @@ export function originOf(url: string): string | undefined {
     return undefined;
   }
 }
+
+/**
+ * Advisory check (used for warnings in the UI): is `url` covered by one of
+ * these approved host entries? Follows the rules of Forge's egress matcher,
+ * which the backend uses for the real check: https only, entries may be a
+ * bare host, an origin, or carry a path (ignored); a port must match; and
+ * `*.example.com` covers subdomains but not example.com itself.
+ */
+export function hostCovered(url: string, entries: string[]): boolean {
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    return false;
+  }
+  if (target.protocol !== 'https:') return false;
+  return entries.some((raw) => {
+    const entry = raw.trim().toLowerCase();
+    if (!entry || entry === '*' || /^[a-z][a-z0-9+.-]*:\/\//.test(entry) && !entry.startsWith('https://')) return false;
+    const hostPart = entry.replace(/^https:\/\//, '').split('/')[0];
+    if (hostPart.startsWith('*.')) {
+      const suffix = hostPart.slice(1);
+      return target.host.endsWith(suffix) && target.host.length > suffix.length;
+    }
+    return target.host === hostPart;
+  });
+}
