@@ -1,0 +1,58 @@
+{
+  "actor": null,
+  "repository": {
+    "type": "repository",
+    "links": {
+      "self": {
+        "href": "https://api.bitbucket.org/api/2.0/repositories/bitbucket/bitbucket"
+      },
+      "html": {
+        "href": "https://api.bitbucket.org/bitbucket/bitbucket"
+      },
+      "avatar": {
+        "href": "https://example.com/avatar.png"
+      }
+    },
+    "uuid": "{673a6070-3421-46c9-9d48-90745f7bfe8e}",
+    "project": null,
+    "full_name": "workspace_slug/repoitory_slug",
+    "workspace": null,
+    "name": "repo_name",
+    "website": "https://mywebsite.com/",
+    "scm": "git",
+    "is_private": true
+  },
+  "push": {
+    "changes": [
+      {
+        "new": {
+          "type": "branch",
+          "name": "name-of-branch",
+          "target": {
+            "type": "commit",
+            "hash": "709d658dc5b6d6afcd46049c2f332ee3f515a67d",
+            "author": null,
+            "message": "new commit message\n",
+            "date": "2015-06-09T03:34:49+00:00"
+          }
+        },
+        "old": {
+          "type": "branch",
+          "name": "name-of-branch",
+          "target": {
+            "type": "commit",
+            "hash": "1e65c05c1d5171631d92438a13901ca7dae9618c",
+            "author": null,
+            "message": "old commit message\n",
+            "date": "2015-06-08T21:34:56+00:00"
+          }
+        },
+        "created": false,
+        "forced": false,
+        "closed": false,
+        "truncated": false,
+        "commits": []
+      }
+    ]
+  }
+}

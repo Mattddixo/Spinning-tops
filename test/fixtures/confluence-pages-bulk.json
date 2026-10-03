@@ -1,0 +1,39 @@
+{
+  "results": [
+    {
+      "id": "201",
+      "status": "current",
+      "title": "Billing API",
+      "spaceId": "777",
+      "parentId": "100",
+      "parentType": "page",
+      "position": 0,
+      "authorId": "5b10ac8d82e05b22cc7d4ef5",
+      "ownerId": "5b10ac8d82e05b22cc7d4ef5",
+      "lastOwnerId": null,
+      "subtype": null,
+      "createdAt": "2026-01-05T10:00:00.000Z",
+      "version": {
+        "createdAt": "2026-02-01T09:00:00.000Z",
+        "message": "",
+        "number": 7,
+        "minorEdit": false,
+        "authorId": "5b10ac8d82e05b22cc7d4ef5"
+      },
+      "body": {
+        "atlas_doc_format": {
+          "representation": "atlas_doc_format",
+          "value": "{\"type\": \"doc\", \"version\": 1, \"content\": [{\"type\": \"extension\", \"attrs\": {\"extensionType\": \"com.atlassian.ecosystem\", \"extensionKey\": \"1a2b3c4d-0000-1111-2222-333344445555/6e7f8a9b-aaaa-bbbb-cccc-ddddeeeeffff/static/specpage-viewer\", \"localId\": \"m-201\", \"parameters\": {}}}]}"
+        }
+      },
+      "_links": {
+        "webui": "/spaces/ENG/pages/201/Billing+API",
+        "editui": "/pages/resumedraft.action?draftId=201",
+        "tinyui": "/x/yQA"
+      }
+    }
+  ],
+  "_links": {
+    "base": "https://example.atlassian.net/wiki"
+  }
+}

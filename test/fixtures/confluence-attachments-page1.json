@@ -1,0 +1,58 @@
+{
+  "results": [
+    {
+      "id": "att1",
+      "status": "current",
+      "title": "openapi.yaml",
+      "createdAt": "2026-01-05T10:00:00.000Z",
+      "pageId": "123",
+      "mediaType": "application/yaml",
+      "mediaTypeDescription": "",
+      "comment": "",
+      "fileId": "f-1",
+      "fileSize": 2048,
+      "webuiLink": "/pages/viewpageattachments.action?pageId=123&preview=/123/att1/openapi.yaml",
+      "downloadLink": "/download/attachments/123/openapi.yaml?version=3&api=v2",
+      "version": {
+        "createdAt": "2026-01-05T10:00:00.000Z",
+        "message": "",
+        "number": 3,
+        "minorEdit": false,
+        "authorId": "5b10ac8d82e05b22cc7d4ef5"
+      },
+      "_links": {
+        "webui": "/pages/viewpageattachments.action?pageId=123&preview=/123/att1/openapi.yaml",
+        "download": "/download/attachments/123/openapi.yaml?version=3&api=v2"
+      }
+    },
+    {
+      "id": "att2",
+      "status": "current",
+      "title": "diagram.png",
+      "createdAt": "2026-01-05T10:00:00.000Z",
+      "pageId": "123",
+      "mediaType": "image/png",
+      "mediaTypeDescription": "",
+      "comment": "",
+      "fileId": "f-2",
+      "fileSize": 51200,
+      "webuiLink": "/pages/viewpageattachments.action?pageId=123&preview=/123/att2/diagram.png",
+      "downloadLink": "/download/attachments/123/diagram.png?version=1&api=v2",
+      "version": {
+        "createdAt": "2026-01-05T10:00:00.000Z",
+        "message": "",
+        "number": 1,
+        "minorEdit": false,
+        "authorId": "5b10ac8d82e05b22cc7d4ef5"
+      },
+      "_links": {
+        "webui": "/pages/viewpageattachments.action?pageId=123&preview=/123/att2/diagram.png",
+        "download": "/download/attachments/123/diagram.png?version=1&api=v2"
+      }
+    }
+  ],
+  "_links": {
+    "next": "/wiki/api/v2/pages/123/attachments?limit=250&cursor=eyJpZCI6ImF0dDIifQ%3D%3D",
+    "base": "https://example.atlassian.net/wiki"
+  }
+}

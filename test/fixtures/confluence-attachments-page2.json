@@ -1,0 +1,32 @@
+{
+  "results": [
+    {
+      "id": "att3",
+      "status": "current",
+      "title": "events.json",
+      "createdAt": "2026-01-05T10:00:00.000Z",
+      "pageId": "123",
+      "mediaType": "application/json",
+      "mediaTypeDescription": "",
+      "comment": "",
+      "fileId": "f-3",
+      "fileSize": 900,
+      "webuiLink": "/pages/viewpageattachments.action?pageId=123&preview=/123/att3/events.json",
+      "downloadLink": "/download/attachments/123/events.json?version=1&api=v2",
+      "version": {
+        "createdAt": "2026-01-05T10:00:00.000Z",
+        "message": "",
+        "number": 1,
+        "minorEdit": false,
+        "authorId": "5b10ac8d82e05b22cc7d4ef5"
+      },
+      "_links": {
+        "webui": "/pages/viewpageattachments.action?pageId=123&preview=/123/att3/events.json",
+        "download": "/download/attachments/123/events.json?version=1&api=v2"
+      }
+    }
+  ],
+  "_links": {
+    "base": "https://example.atlassian.net/wiki"
+  }
+}
