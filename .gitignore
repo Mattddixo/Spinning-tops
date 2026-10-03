@@ -8,3 +8,4 @@ playwright-report/
 .DS_Store
 *.log
 install-diagnosis.txt
+maintenance-report.md
