@@ -1,6 +1,7 @@
 import { permissions } from '@forge/bridge';
 import type { EgressType } from '@forge/egress';
 import { EGRESS_GROUPS } from '../../../../src/shared/types';
+import { call, invoke } from '../api';
 
 // Host approvals (customer-managed egress). egress.set pops Atlassian's consent
 // dialog. Forge allows 10 groups per install and 10 domains per group.
@@ -84,4 +85,11 @@ export async function approveHosts(group: EgressGroup, hosts: string[]): Promise
 
 export async function removeHost(group: EgressGroup, domain: string): Promise<void> {
   await permissions.egress.deleteDomain({ key: EGRESS_GROUPS[group], domain, type: FETCH_BACKEND });
+}
+
+// Host approvals go through Atlassian's consent dialog in the browser, so the
+// backend never sees them. Report them so they show up in the activity log.
+// A failed log write never undoes or blocks the approval itself.
+export async function recordHostChange(action: 'host.approve' | 'host.remove', group: EgressGroup, hosts: string[]): Promise<void> {
+  await Promise.allSettled(hosts.map((host) => call(invoke('adminRecordHostChange', { action, host, group }))));
 }

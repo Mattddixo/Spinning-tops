@@ -8,6 +8,8 @@ import { GROUP_INFO, HostLimitError, MAX_DOMAINS_PER_GROUP, type EgressGroup } f
 // Pure helpers for the settings page, kept out of the components so they can
 // be unit tested.
 
+export type Status = { kind: 'success' | 'warning' | 'error'; text: string };
+
 // Values are translation keys.
 export const AUTH_OPTIONS: Record<GitProvider, Array<{ id: GitAuthType; label: string }>> = {
   github: [
