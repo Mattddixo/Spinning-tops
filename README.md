@@ -97,6 +97,12 @@ If you change permissions in manifest.yml, run `forge install --upgrade` after d
 
 Webhooks need the web trigger in manifest.yml to be deployed; after that the URL stays the same across deploys.
 
+## Maintenance
+
+`npm run maintenance` checks both package folders for outdated packages and known vulnerabilities, compares your Node version with the Forge runtime in manifest.yml, and writes `maintenance-report.md`. Add `-- --full` to also run typecheck, lint, tests and build. It exits with code 1 when something needs attention soon (a high or critical vulnerability, or a failed check).
+
+It doesn't cover Forge platform changes; check the [Forge changelog](https://developer.atlassian.com/platform/forge/changelog/) for deprecations and runtime end-of-life dates.
+
 ## UI text
 
 All text shown to users is in `locales/en-US.json`. Backend errors are sent with a key and parameters as well as the English message, so translating later means adding catalogs, not changing code. `npm test` fails if the code uses a key the file doesn't have, or the file has keys nothing uses.

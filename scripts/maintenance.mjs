@@ -56,7 +56,7 @@ for (const project of projects) {
   } else {
     const rows = Object.entries(outdated).map(([name, info]) => {
       const current = info.current ?? '(not installed)';
-      let note = '';
+      let note;
       if (name === '@types/node' && major(info.latest) > runtimeMajor) {
         note = `keep on ${runtimeMajor}.x to match the Forge runtime`;
       } else if (major(info.latest) > major(current)) {
