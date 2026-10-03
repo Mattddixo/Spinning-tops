@@ -268,6 +268,8 @@ export interface GitConnection {
   spaceKeys: string[];
   defaultRef?: string;
   hasToken: boolean;
+  /** A webhook secret is set, so pushes refresh cached specs straight away. */
+  webhookEnabled?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -341,7 +343,9 @@ export type AuditAction =
   | 'connection.delete'
   | 'cache.clear'
   | 'host.approve'
-  | 'host.remove';
+  | 'host.remove'
+  | 'webhook.enable'
+  | 'webhook.disable';
 
 export interface AuditEntry {
   at: string;

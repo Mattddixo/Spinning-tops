@@ -443,6 +443,75 @@ function TestConnection({ connection }: { connection: GitConnection }) {
   );
 }
 
+function WebhookPanel({ connection, onChange }: { connection: GitConnection; onChange: (c: GitConnection) => void }) {
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<AppError>();
+  const [url, setUrl] = useState<string>();
+  // Only set right after turning on or making a new secret; it can't be read back later.
+  const [secret, setSecret] = useState<string>();
+
+  useEffect(() => {
+    if (!connection.webhookEnabled || url) return;
+    call(invoke('adminGetWebhookUrl', { id: connection.id }))
+      .then((r) => setUrl(r.url))
+      .catch((err) => setError(toAppError(err)));
+  }, [connection.id, connection.webhookEnabled, url]);
+
+  const act = async (body: () => Promise<void>) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await body();
+    } catch (err) {
+      setError(toAppError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const enable = () =>
+    act(async () => {
+      const r = await call(invoke('adminEnableWebhook', { id: connection.id }));
+      setUrl(r.url);
+      setSecret(r.secret);
+      onChange(r.connection);
+    });
+  const disable = () =>
+    act(async () => {
+      onChange(await call(invoke('adminDisableWebhook', { id: connection.id })));
+      setUrl(undefined);
+      setSecret(undefined);
+    });
+
+  return (
+    <div className="sp-test sp-stack-tight">
+      <span className="sp-help">{t('ui.admin.webhookIntro')}</span>
+      {connection.webhookEnabled && url ? (
+        <>
+          <Field label={t('ui.admin.webhookUrl')}>{(id) => <input id={id} className="sp-input" readOnly value={url} onFocus={(e) => e.target.select()} />}</Field>
+          {secret ? (
+            <Field label={t('ui.admin.webhookSecret')} help={t('ui.admin.webhookSecretOnce')}>
+              {(id, describedBy) => <input id={id} className="sp-input" readOnly value={secret} aria-describedby={describedBy} onFocus={(e) => e.target.select()} />}
+            </Field>
+          ) : null}
+          <span className="sp-help">{t(`ui.provider.${connection.provider}Webhook`)}</span>
+        </>
+      ) : null}
+      <div className="sp-row">
+        <Button compact appearance={connection.webhookEnabled ? 'default' : 'primary'} onClick={() => void enable()} disabled={busy}>
+          {connection.webhookEnabled ? t('ui.admin.webhookNewSecret') : t('ui.admin.webhookTurnOn')}
+        </Button>
+        {connection.webhookEnabled ? (
+          <Button compact appearance="subtle" onClick={() => void disable()} disabled={busy}>
+            {t('ui.admin.webhookTurnOff')}
+          </Button>
+        ) : null}
+      </div>
+      {error ? <ErrorMessage error={error} /> : null}
+    </div>
+  );
+}
+
 function describeAudit(t: Translate, entry: AuditEntryView): string {
   const action = t(`ui.audit.${entry.action}`);
   let details = entry.target ?? '';
@@ -521,6 +590,7 @@ function AdminApp() {
   const [hostsError, setHostsError] = useState<string>();
   const [draft, setDraft] = useState<Draft>();
   const [testing, setTesting] = useState<string>();
+  const [webhookFor, setWebhookFor] = useState<string>();
   const [notice, setNotice] = useState<Status>();
   // Bumped after each change so the activity log reloads.
   const [activityKey, setActivityKey] = useState(0);
@@ -647,6 +717,12 @@ function AdminApp() {
                       <strong>{c.name}</strong>
                       <div className="sp-small">{t(`ui.provider.${c.provider}`)}</div>
                       {testing === c.id ? <TestConnection connection={c} /> : null}
+                      {webhookFor === c.id ? (
+                        <WebhookPanel
+                          connection={c}
+                          onChange={(updated) => setState((s) => (s ? { ...s, connections: s.connections.map((x) => (x.id === updated.id ? updated : x)) } : s))}
+                        />
+                      ) : null}
                     </td>
                     <td>{c.repos.join(', ')}</td>
                     <td>{c.spaceKeys.length ? c.spaceKeys.join(', ') : t('ui.common.all')}</td>
@@ -658,6 +734,7 @@ function AdminApp() {
                         <span className={`sp-lozenge ${approved ? 'sp-lozenge-success' : 'sp-lozenge-warning'}`}>
                           {approved ? t('ui.admin.statusHostOk') : t('ui.admin.statusHostMissing')}
                         </span>
+                        {c.webhookEnabled ? <span className="sp-lozenge sp-lozenge-success">{t('ui.admin.statusWebhook')}</span> : null}
                         {!approved && origin ? (
                           <Button
                             compact
@@ -673,6 +750,11 @@ function AdminApp() {
                         <Button compact onClick={() => setTesting(testing === c.id ? undefined : c.id)}>
                           {t('ui.common.test')}
                         </Button>
+                        {c.provider !== 'swaggerhub' ? (
+                          <Button compact onClick={() => setWebhookFor(webhookFor === c.id ? undefined : c.id)} aria-expanded={webhookFor === c.id}>
+                            {t('ui.admin.webhook')}
+                          </Button>
+                        ) : null}
                         <Button compact onClick={() => setDraft(toDraft(c))}>
                           {t('ui.common.edit')}
                         </Button>

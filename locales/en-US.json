@@ -94,7 +94,8 @@
     "connectionGone": "That connection no longer exists.",
     "tooManyConnections": "You can have up to {max} Git connections.",
     "tokenTooLong": "The access token is too long.",
-    "tokenRequired": "Enter an access token for this connection."
+    "tokenRequired": "Enter an access token for this connection.",
+    "webhookUnsupported": "Webhooks aren't available for SwaggerHub connections."
   },
   "hints": {
     "askAdminApproveHost": "A Confluence admin can approve this host in SpecPage settings.",
@@ -272,7 +273,11 @@
       "gitlabToken": "Project or group access token with the read_repository scope.",
       "bitbucketToken": "Repository, project or workspace access token with the \"repository\" (read) scope.",
       "azureToken": "Personal access token with the Code (Read) scope.",
-      "swaggerhubToken": "SwaggerHub API key, from your account settings. Public APIs work without one."
+      "swaggerhubToken": "SwaggerHub API key, from your account settings. Public APIs work without one.",
+      "githubWebhook": "In the repository or organization: Settings > Webhooks > Add webhook. Paste the URL as the payload URL, choose application/json, paste the secret, and pick “Just the push event”.",
+      "gitlabWebhook": "In the project or group: Settings > Webhooks > Add new webhook. Paste the URL, put the secret in “Secret token”, and tick Push events and Tag push events.",
+      "bitbucketWebhook": "In the repository: Repository settings > Webhooks > Add webhook. Paste the URL and the secret, and choose the Repository push trigger.",
+      "azureWebhook": "In the project: Project settings > Service hooks > Create subscription > Web Hooks, trigger “Code pushed”. Paste the URL, and use the secret as the basic authentication password (any username)."
     },
     "admin": {
       "loading": "Loading SpecPage settings…",
@@ -370,7 +375,16 @@
       "colWhen": "When",
       "colWho": "Who",
       "colWhat": "What",
-      "activityLoadFailed": "Activity couldn't be loaded."
+      "activityLoadFailed": "Activity couldn't be loaded.",
+      "webhook": "Webhook",
+      "webhookIntro": "Add a webhook in your Git host so pushes refresh cached specs straight away instead of waiting for the cache to expire.",
+      "webhookTurnOn": "Turn on webhook",
+      "webhookTurnOff": "Turn off",
+      "webhookNewSecret": "New secret",
+      "webhookUrl": "Webhook URL",
+      "webhookSecret": "Secret",
+      "webhookSecretOnce": "Copy it now; it isn't shown again. Choose New secret if you lose it.",
+      "statusWebhook": "Webhook on"
     },
     "space": {
       "loading": "Loading API docs…",
@@ -401,6 +415,10 @@
       "host": {
         "approve": "Approved host",
         "remove": "Removed host"
+      },
+      "webhook": {
+        "enable": "Turned on webhook",
+        "disable": "Turned off webhook"
       }
     },
     "docs": {

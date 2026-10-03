@@ -368,3 +368,19 @@ test('code samples can be turned off per macro', async ({ page }) => {
   await expect(page.locator('.opblock-section-header', { hasText: 'Responses' }).first()).toBeVisible();
   await expect(page.locator('.sp-samples')).toHaveCount(0);
 });
+
+test('admins can turn on a push webhook and see the secret once', async ({ page }) => {
+  const errors = await installHarness(page, {});
+  await page.goto('/admin.html');
+  await page.getByRole('button', { name: 'Webhook', exact: true }).click();
+  await page.getByRole('button', { name: 'Turn on webhook' }).click();
+  await expect(page.getByLabel('Webhook URL')).toHaveValue('https://abc.hello.atlassian-dev.net/x1/hook?connection=c1');
+  await expect(page.getByLabel('Secret')).toHaveValue('f'.repeat(64));
+  await expect(page.getByText('Just the push event', { exact: false })).toBeVisible();
+  await expect(page.getByText('Webhook on')).toBeVisible();
+  await page.getByRole('button', { name: 'Turn off' }).click();
+  await expect(page.getByLabel('Secret')).toHaveCount(0);
+  await expect(page.getByText('Webhook on')).toHaveCount(0);
+  expect(await cspViolations(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});

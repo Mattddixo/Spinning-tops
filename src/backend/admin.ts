@@ -1,11 +1,23 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { webTrigger } from '@forge/api';
 import { isValidRef, isValidRepo, originOf } from '../shared/git';
 import type { GitAuthType, GitConnection, GitConnectionInput, GitProvider } from '../shared/types';
 import { loadAndBundle } from './bundle';
 import type { SecureContext } from './context';
 import { fail } from './errors';
 import { gitSource } from './sources/git';
-import { deleteConnectionRecord, deleteToken, getConnection, getConnections, getSettings, getToken, saveConnectionRecord, setToken } from './store';
+import {
+  deleteConnectionRecord,
+  deleteToken,
+  deleteWebhookSecret,
+  getConnection,
+  getConnections,
+  getSettings,
+  getToken,
+  saveConnectionRecord,
+  setToken,
+  setWebhookSecret,
+} from './store';
 
 const MAX_CONNECTIONS = 20;
 const MAX_REPOS = 100;
@@ -92,10 +104,14 @@ export async function saveConnection(input: GitConnectionInput): Promise<{ conne
     spaceKeys,
     ...(defaultRef ? { defaultRef } : {}),
     hasToken,
+    // Webhook settings only change through enableWebhook/disableWebhook. A
+    // provider change turns the webhook off, since the check is per provider.
+    ...(existing?.webhookEnabled && existing.provider === provider ? { webhookEnabled: true } : {}),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
   await saveConnectionRecord(connection);
+  if (existing?.webhookEnabled && !connection.webhookEnabled) await deleteWebhookSecret(id);
 
   // What changed, for the audit log (field names only, never values).
   const changes: string[] = [];
@@ -112,7 +128,40 @@ export async function deleteConnection(id: string): Promise<GitConnection> {
   if (!removed) return fail('NOT_FOUND', 'errors.connectionGone');
   await deleteConnectionRecord(removed.id);
   await deleteToken(removed.id);
+  await deleteWebhookSecret(removed.id);
   return removed;
+}
+
+// Providers whose push webhooks we can verify (see webhook.ts).
+const WEBHOOK_PROVIDERS = new Set(['github', 'gitlab', 'bitbucket', 'azure']);
+export const WEBHOOK_TRIGGER_KEY = 'git-webhook';
+
+export async function webhookUrlFor(id: string): Promise<string> {
+  const base = await webTrigger.getUrl(WEBHOOK_TRIGGER_KEY);
+  const url = new URL(base);
+  url.searchParams.set('connection', id);
+  return url.toString();
+}
+
+/** Turn on push webhooks for a connection with a fresh secret. The secret is only returned here, once. */
+export async function enableWebhook(id: string): Promise<{ connection: GitConnection; url: string; secret: string }> {
+  const connection = await getConnection(String(id ?? ''));
+  if (!connection) return fail('NOT_FOUND', 'errors.connectionGone');
+  if (!WEBHOOK_PROVIDERS.has(connection.provider)) return fail('BAD_REQUEST', 'errors.webhookUnsupported');
+  const secret = randomBytes(32).toString('hex');
+  await setWebhookSecret(connection.id, secret);
+  const updated: GitConnection = { ...connection, webhookEnabled: true };
+  await saveConnectionRecord(updated);
+  return { connection: updated, url: await webhookUrlFor(connection.id), secret };
+}
+
+export async function disableWebhook(id: string): Promise<GitConnection> {
+  const connection = await getConnection(String(id ?? ''));
+  if (!connection) return fail('NOT_FOUND', 'errors.connectionGone');
+  await deleteWebhookSecret(connection.id);
+  const { webhookEnabled: _off, ...rest } = connection;
+  await saveConnectionRecord(rest);
+  return rest;
 }
 
 export async function testConnection(ctx: SecureContext, args: { id: string; repo: string; path?: string; ref?: string }) {

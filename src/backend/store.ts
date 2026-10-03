@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { kvs, WhereConditions } from '@forge/kvs';
 import { DEFAULT_SETTINGS, type AppSettings, type GitConnection } from '../shared/types';
 
@@ -70,7 +71,7 @@ export async function getConnections(): Promise<GitConnection[]> {
 
 // IDs come from macro settings, which page editors control, so check the shape
 // before using one in a storage key.
-const isConnectionId = (id: unknown): id is string => typeof id === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(id);
+export const isConnectionId = (id: unknown): id is string => typeof id === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(id);
 
 export async function getConnection(id: string): Promise<GitConnection | undefined> {
   if (!isConnectionId(id)) return undefined;
@@ -109,17 +110,36 @@ export async function bumpCacheGeneration(): Promise<number> {
   return next;
 }
 
-// Per-repository generation, bumped by Git webhooks so cached specs from that
-// repo are ignored right away.
+// Per-repository generation, changed by Git webhooks so cached specs from that
+// repo are ignored right away. A random value rather than a counter, so two
+// pushes handled at once can't both write the same "next" number. ALL_REPOS
+// is used when a webhook doesn't say which repo changed.
+export const ALL_REPOS = '*';
 const repoGenerationKey = (connectionId: string, repo: string) =>
-  `repo-generation:${connectionId}:${repo.toLowerCase().replace(/[^a-z0-9._:\s#-]/g, '_')}`;
+  `repo-generation:${connectionId}:${repo.toLowerCase().replace(/[^a-z0-9._:\s#*-]/g, '_')}`;
 
-export async function getRepoGeneration(connectionId: string, repo: string): Promise<number> {
-  return (await kvs.get<number>(repoGenerationKey(connectionId, repo))) ?? 0;
+/** Part of the cache key for a Git spec; changes whenever a webhook reports a push. */
+export async function getRepoGeneration(connectionId: string, repo: string): Promise<string> {
+  const [all, one] = await Promise.all([kvs.get<string | number>(repoGenerationKey(connectionId, ALL_REPOS)), kvs.get<string | number>(repoGenerationKey(connectionId, repo))]);
+  return `${all ?? 0}.${one ?? 0}`;
 }
 
-export async function bumpRepoGeneration(connectionId: string, repo: string): Promise<number> {
-  const next = (await getRepoGeneration(connectionId, repo)) + 1;
-  await kvs.set(repoGenerationKey(connectionId, repo), next);
-  return next;
+export async function bumpRepoGeneration(connectionId: string, repo: string): Promise<void> {
+  await kvs.set(repoGenerationKey(connectionId, repo), `${Date.now().toString(36)}${randomBytes(4).toString('hex')}`);
+}
+
+const webhookSecretKey = (id: string) => `webhook-secret:${id}`;
+
+export async function getWebhookSecret(id: string): Promise<string | undefined> {
+  if (!isConnectionId(id)) return undefined;
+  const value = await kvs.getSecret<string>(webhookSecretKey(id));
+  return typeof value === 'string' && value ? value : undefined;
+}
+
+export async function setWebhookSecret(id: string, secret: string): Promise<void> {
+  await kvs.setSecret(webhookSecretKey(id), secret);
+}
+
+export async function deleteWebhookSecret(id: string): Promise<void> {
+  await kvs.deleteSecret(webhookSecretKey(id));
 }

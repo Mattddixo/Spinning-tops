@@ -147,6 +147,15 @@ export async function installHarness(page: Page, setup: Setup = {}) {
           adminSaveConnection: (payload: { connection: Record<string, unknown> }) =>
             ok({ ...payload.connection, id: 'c2', hasToken: true, createdAt: 'x', updatedAt: 'x', token: undefined }),
           adminSaveSettings: (payload: { settings: unknown }) => ok(payload.settings),
+          adminEnableWebhook: (payload: { id: string }) =>
+            ok({
+              connection: { id: payload.id, name: 'Acme GitHub', provider: 'github', apiBaseUrl: 'https://api.github.com', webBaseUrl: 'https://github.com', authType: 'bearer', repos: ['acme/*'], spaceKeys: [], hasToken: true, webhookEnabled: true, createdAt: 'x', updatedAt: 'x' },
+              url: `https://abc.hello.atlassian-dev.net/x1/hook?connection=${payload.id}`,
+              secret: 'f'.repeat(64),
+            }),
+          adminDisableWebhook: (payload: { id: string }) =>
+            ok({ id: payload.id, name: 'Acme GitHub', provider: 'github', apiBaseUrl: 'https://api.github.com', webBaseUrl: 'https://github.com', authType: 'bearer', repos: ['acme/*'], spaceKeys: [], hasToken: true, createdAt: 'x', updatedAt: 'x' }),
+          adminGetWebhookUrl: (payload: { id: string }) => ok({ url: `https://abc.hello.atlassian-dev.net/x1/hook?connection=${payload.id}` }),
           adminGetAudit: () => ok(setup.audit ?? []),
           adminRecordHostChange: () => ok({ recorded: true }),
         },

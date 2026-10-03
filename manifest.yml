@@ -107,6 +107,13 @@ modules:
         function: resolver
       title: API docs
       route: api-docs
+  # Git push webhooks. The URL is public; each request is checked against the
+  # connection's secret (see src/backend/webhook.ts).
+  webtrigger:
+    - key: git-webhook
+      function: webhook
+      response:
+        type: dynamic
   function:
     - key: resolver
       handler: index.handler
@@ -115,6 +122,8 @@ modules:
         memoryMB: 1024
     - key: export
       handler: index.exportHandler
+    - key: webhook
+      handler: index.webhookHandler
 
 resources:
   - key: ui

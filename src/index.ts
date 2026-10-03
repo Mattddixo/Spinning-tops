@@ -1,7 +1,7 @@
 import { makeResolver } from '@forge/resolver';
 import type { Defs } from './shared/defs';
 import type { AppSettings, ConnectionOption } from './shared/types';
-import { deleteConnection, saveConnection, testConnection } from './backend/admin';
+import { deleteConnection, disableWebhook, enableWebhook, saveConnection, testConnection, webhookUrlFor } from './backend/admin';
 import { listAudit, recordAudit } from './backend/audit';
 import { requireAdmin } from './backend/auth';
 import { INVOCATION_BUDGET_MS, withBudget } from './backend/budget';
@@ -12,9 +12,10 @@ import { compareSpec } from './backend/compare';
 import { exportMacro } from './backend/export';
 import { loadSpec } from './backend/loadSpec';
 import { proxyRequest } from './backend/proxy';
+import { handleWebhook, type WebTriggerRequest } from './backend/webhook';
 import { listSpecAttachments, readAttachmentForEditing } from './backend/sources/attachment';
 import { hostOf } from './shared/git';
-import { bumpCacheGeneration, getConnections, getSettings, saveSettings } from './backend/store';
+import { bumpCacheGeneration, getConnection, getConnections, getSettings, saveSettings } from './backend/store';
 
 // Every call gets a time budget under Forge's 25 s limit (see budget.ts).
 const run = <T>(name: string, body: () => Promise<T>) => asResult(name, () => withBudget(INVOCATION_BUDGET_MS, body));
@@ -128,6 +129,32 @@ export const handler = makeResolver<Defs>({
       return testConnection(ctx, payload);
     }),
 
+  adminEnableWebhook: ({ payload, context }) =>
+    run('adminEnableWebhook', async () => {
+      const ctx = readContext(context);
+      await requireAdmin(ctx);
+      const result = await enableWebhook(payload?.id);
+      await recordAudit(ctx.accountId, 'webhook.enable', result.connection.name);
+      return result;
+    }),
+
+  adminDisableWebhook: ({ payload, context }) =>
+    run('adminDisableWebhook', async () => {
+      const ctx = readContext(context);
+      await requireAdmin(ctx);
+      const connection = await disableWebhook(payload?.id);
+      await recordAudit(ctx.accountId, 'webhook.disable', connection.name);
+      return connection;
+    }),
+
+  adminGetWebhookUrl: ({ payload, context }) =>
+    run('adminGetWebhookUrl', async () => {
+      await requireAdmin(readContext(context));
+      const connection = await getConnection(String(payload?.id ?? ''));
+      if (!connection?.webhookEnabled) fail('NOT_FOUND', 'errors.connectionGone');
+      return { url: await webhookUrlFor((connection as { id: string }).id) };
+    }),
+
   adminClearCache: ({ context }) =>
     run('adminClearCache', async () => {
       const ctx = readContext(context);
@@ -154,6 +181,9 @@ export const handler = makeResolver<Defs>({
       return { recorded: true };
     }),
 });
+
+// Git push webhooks (web trigger; public URL, verified per connection in webhook.ts).
+export const webhookHandler = (request: WebTriggerRequest) => handleWebhook(request);
 
 // adfExport handler (PDF/Word export, page history).
 export const exportHandler = (payload: Parameters<typeof exportMacro>[0]) => withBudget(INVOCATION_BUDGET_MS, () => exportMacro(payload));

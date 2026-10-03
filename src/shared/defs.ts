@@ -45,6 +45,11 @@ export type Defs = {
     path?: string;
     ref?: string;
   }) => Result<{ title: string; version: string; operationCount: number; fileCount: number }>;
+  /** Turns on push webhooks with a new secret (shown once) and returns the URL to register. */
+  adminEnableWebhook: (args: { id: string }) => Result<{ connection: GitConnection; url: string; secret: string }>;
+  adminDisableWebhook: (args: { id: string }) => Result<GitConnection>;
+  /** The webhook URL for a connection, without changing its secret. */
+  adminGetWebhookUrl: (args: { id: string }) => Result<{ url: string }>;
   adminClearCache: () => Result<{ cleared: boolean }>;
   adminGetAudit: () => Result<AuditEntryView[]>;
   /** Host approvals happen in the browser (Atlassian's consent dialog), so the UI reports them for the log. */

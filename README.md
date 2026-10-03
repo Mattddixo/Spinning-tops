@@ -33,7 +33,7 @@ If the spec is split into multiple files with relative `$ref`s, those get pulled
 - PDF/Word export prints a table of endpoints instead of a blank box
 - Guests and anonymous users on public spaces can read the docs
 - Follows Confluence light/dark theme
-- Git and URL specs are cached (5 min to 24 h, set by the admin)
+- Git and URL specs are cached (5 min to 24 h, set by the admin). Turn on a webhook for a Git connection (GitHub, GitLab, Bitbucket or Azure DevOps) and a push refreshes that repo's specs straight away.
 - The settings page keeps an activity log: who changed settings, connections or approved hosts, and when (last 200 changes)
 
 ## Security notes
@@ -44,6 +44,7 @@ If the spec is split into multiple files with relative `$ref`s, those get pulled
 - Licensed users read attachments as themselves. Guests/anonymous users can't, so the app reads for them, but only from the page they're already looking at.
 - The Try it out proxy strips cookies and similar headers, doesn't follow redirects, and is https only. Request bodies are capped at 400 KB (350 KB for files), text responses at 4 MB and binary responses at 3 MB. Guests and anonymous users can't use it.
 - Git requests follow redirects themselves: tokens only go to the original host, and a redirect to a non-https address is refused.
+- Webhooks: the web trigger URL is public, as with all Forge web triggers, so every request is checked against that connection's own secret before anything in it is read: HMAC-SHA256 signatures for GitHub and Bitbucket, the token for GitLab, the basic-auth password for Azure DevOps. Comparisons are constant time. Unknown connections and connections without a webhook get the same 404. A valid push only marks cached specs as stale, so a replayed request costs at most one extra fetch. Secrets live in Forge secret storage, are shown once, and are deleted with the connection.
 - Comparisons are for licensed users only and use the macro's saved settings, so they reach the same repos and attachments the macro already can.
 - The activity log stores field names only (for example "token" changed), never values.
 - Uploads and attachment edits go straight from the macro settings to Confluence as the editing user, so Confluence's own page permissions apply (scope `write:confluence-file`). Saving an edit adds a new attachment version, and the editor warns if someone saved a newer version in the meantime.
@@ -93,6 +94,8 @@ npm run test:e2e     # browser tests; set PLAYWRIGHT_CHROMIUM_PATH if Playwright
 6. Git connections and approved hosts are under Manage apps > SpecPage > Configure.
 
 If you change permissions in manifest.yml, run `forge install --upgrade` after deploying.
+
+Webhooks need the web trigger in manifest.yml to be deployed; after that the URL stays the same across deploys.
 
 ## UI text
 
