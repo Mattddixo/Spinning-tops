@@ -52,7 +52,9 @@ export function normaliseHost(input: string): string | undefined {
   if (/^\*\.[a-z0-9.-]+\.[a-z]{2,}$/.test(value)) return value;
   try {
     const url = new URL(value.includes('://') ? value : `https://${value}`);
-    if (url.protocol !== 'https:' || !url.hostname.includes('.')) return undefined;
+    // URL parsing allows "*" in a hostname, so "*.com" or "a*.example.com" would
+    // get here. Only the leading "*." form above is a wildcard Forge understands.
+    if (url.protocol !== 'https:' || !url.hostname.includes('.') || url.hostname.includes('*')) return undefined;
     return url.origin;
   } catch {
     return undefined;
