@@ -2,11 +2,10 @@ import { diffSpecs } from '../shared/diff';
 import { isValidRef } from '../shared/git';
 import { isAsyncApi } from '../shared/spec';
 import type { AppSettings, CompareResponse, CompareTarget, MacroConfig, SpecSummary } from '../shared/types';
-import { readCache, writeCache } from './cache';
 import { isLicensedUser, requireLicense, type SecureContext } from './context';
 import { decodeSpec } from './encoding';
 import { fail } from './errors';
-import { buildSpec, resolveMacroConfig, selectSource, type SourceOverrides } from './loadSpec';
+import { cachedOrBuilt, resolveMacroConfig, selectSource, type SourceOverrides } from './loadSpec';
 import { findAttachment } from './sources/attachment';
 import { resolveGitTarget } from './sources/git';
 import { getSettings } from './store';
@@ -23,16 +22,10 @@ interface Loaded {
 // recently doesn't fetch it again.
 async function load(ctx: SecureContext, config: MacroConfig, settings: AppSettings, overrides?: SourceOverrides): Promise<Loaded> {
   const { source, rootText } = await selectSource(ctx, config, settings, overrides);
-  if (source.cacheKey) {
-    const cached = await readCache(source.cacheKey, settings.cacheTtlMinutes);
-    if (cached && !isAsyncApi(cached.summary.kind)) return { label: source.label, spec: decodeSpec(cached.specGz), summary: cached.summary };
-  }
-  const built = await buildSpec(source, settings, rootText);
-  if (source.cacheKey) {
-    const { spec: _spec, ...cached } = built;
-    await writeCache(source.cacheKey, settings.cacheTtlMinutes, { ...cached, ...(source.link ? { sourceLink: source.link } : {}) });
-  }
-  return { label: source.label, spec: built.spec, summary: built.summary };
+  const { result, spec } = await cachedOrBuilt(source, settings, rootText);
+  // AsyncAPI is stored as parser output, not a spec, so stop before decoding it.
+  if (isAsyncApi(result.summary.kind)) fail('UNSUPPORTED_SPEC', 'errors.compareAsyncApi');
+  return { label: source.label, spec: spec ?? decodeSpec(result.specGz), summary: result.summary };
 }
 
 /** Work out which older version to load, and refuse comparisons that make no sense. */
@@ -74,7 +67,6 @@ export async function compareSpec(ctx: SecureContext, savedConfig: MacroConfig, 
   const overrides = await baseOverrides(ctx, config, target);
   const settings = await getSettings();
   const [head, base] = await Promise.all([load(ctx, config, settings), load(ctx, config, settings, overrides)]);
-  if (isAsyncApi(head.summary.kind) || isAsyncApi(base.summary.kind)) fail('UNSUPPORTED_SPEC', 'errors.compareAsyncApi');
   return {
     ...diffSpecs(base.spec, base.summary.kind, head.spec, head.summary.kind),
     baseLabel: base.label,

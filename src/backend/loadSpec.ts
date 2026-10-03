@@ -101,6 +101,26 @@ export async function buildSpec(source: SpecSource, settings: AppSettings, rootT
 }
 
 /**
+ * The spec from the cache, or built from the source (and cached). `spec` is
+ * only set when it was built; cached copies keep just the encoded form.
+ */
+export async function cachedOrBuilt(
+  source: SpecSource,
+  settings: AppSettings,
+  rootText?: string,
+  options: { refresh?: boolean } = {},
+): Promise<{ result: CachedSpec; fromCache: boolean; spec?: Record<string, unknown> }> {
+  if (source.cacheKey && !options.refresh) {
+    const cached = await readCache(source.cacheKey, settings.cacheTtlMinutes);
+    if (cached) return { result: cached, fromCache: true };
+  }
+  const { spec, ...built } = await buildSpec(source, settings, rootText);
+  const result: CachedSpec = { ...built, ...(source.link ? { sourceLink: source.link } : {}) };
+  if (source.cacheKey) await writeCache(source.cacheKey, settings.cacheTtlMinutes, result);
+  return { result, fromCache: false, spec };
+}
+
+/**
  * A macro inserted by pasting a link has no saved settings yet, only the link
  * (from the Forge context, so it can be trusted). Work out the Git or
  * SwaggerHub settings it stands for so the docs show straight away.
@@ -144,25 +164,7 @@ export async function loadSpec(
   const refresh = options.refresh === true && isLicensedUser(ctx);
   const tryItOutAllowed = settings.tryItOutEnabled && config.tryItOut === true && isLicensedUser(ctx);
 
-  let result: CachedSpec | undefined;
-  let fromCache = false;
-  if (source.cacheKey && !refresh) {
-    result = await readCache(source.cacheKey, settings.cacheTtlMinutes);
-    fromCache = Boolean(result);
-  }
-  if (!result) {
-    const built = await buildSpec(source, settings, rootText);
-    result = {
-      specGz: built.specGz,
-      summary: built.summary,
-      fileCount: built.fileCount,
-      warnings: built.warnings,
-      serversResolvable: built.serversResolvable,
-      fetchedAt: built.fetchedAt,
-      ...(source.link ? { sourceLink: source.link } : {}),
-    };
-    if (source.cacheKey) await writeCache(source.cacheKey, settings.cacheTtlMinutes, result);
-  }
+  const { result, fromCache } = await cachedOrBuilt(source, settings, rootText, { refresh });
 
   const warnings = [...result.warnings];
   if (!result.serversResolvable && !config.serverUrl && tryItOutAllowed) warnings.push(notice('warnings.relativeServers'));

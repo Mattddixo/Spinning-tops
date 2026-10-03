@@ -108,10 +108,10 @@ All text shown to users is in `locales/en-US.json`. Backend errors are sent with
 - Pasted specs up to 100,000 characters
 - 10 approved hosts per list (Forge limit). Wildcards like `*.example.com` work.
 - Try it out: OAuth flows that need a sign-in pop-up (authorization code, implicit, OpenID Connect) can't run inside Confluence; paste a token instead. No Try it out for AsyncAPI.
-- Comparisons work for Git and attachment sources, OpenAPI and Swagger only. `oneOf`/`anyOf` edits are flagged to check by hand rather than judged. Lists stop at 500 changes.
+- Comparisons work for Git and attachment sources, OpenAPI and Swagger only. `oneOf`/`anyOf` edits are flagged to check by hand rather than judged. Lists show up to 500 changes, breaking ones first; the counts cover everything found.
 - Tag/path filters apply to OpenAPI and Swagger only. AsyncAPI documents are shown whole.
 - AsyncAPI message payloads in Avro, RAML or Protobuf schema formats aren't supported yet (JSON Schema and AsyncAPI schemas are).
 - Link autoconvert only knows the public hosts above, and not Azure DevOps (its file links keep the path in the query string, so a pattern would catch every repo link).
 - Attachments over 2 MB can't be edited in the macro settings (upload a new version instead).
-- The site-wide catalog checks up to 2,000 macros per load and says so if there are more; space pages check up to 1,000 each. Entries recorded before the catalog existed show the space key once their page is viewed again.
+- The site-wide catalog checks up to 2,000 macros per load and says so if there are more; space pages check up to 1,000 each. Entries recorded before the catalog existed show the space key once their page is viewed again. A page whose macro was removed drops off the site catalog once its space's API docs page has been opened.
 - The space API list shows a page once it has been viewed after the macro was added. If a page had several SpecPage macros and one is removed, its entry stays until the last one goes.

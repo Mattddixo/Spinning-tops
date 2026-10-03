@@ -1,3 +1,4 @@
+import { HTTP_METHODS, deref, isObject, mergedParameters, type Json } from './refs';
 import type { QualityCheck, QualityCheckId, QualityReport, SpecKind } from './types';
 
 // Documentation quality checks for OpenAPI and Swagger, in the spirit of the
@@ -5,36 +6,9 @@ import type { QualityCheck, QualityCheckId, QualityReport, SpecKind } from './ty
 // things that make a spec invalid (Swagger UI already complains about those).
 // Important checks count double in the score.
 
-type Json = Record<string, unknown>;
-
-const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
 const MAX_EXAMPLES = 8;
 
-const isObject = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
 const hasText = (v: unknown) => typeof v === 'string' && v.trim().length > 0;
-
-function pointer(root: Json, ref: string): unknown {
-  if (!ref.startsWith('#/')) return undefined;
-  let node: unknown = root;
-  for (const raw of ref.slice(2).split('/')) {
-    let segment: string;
-    try {
-      segment = decodeURIComponent(raw);
-    } catch {
-      segment = raw;
-    }
-    segment = segment.replace(/~1/g, '/').replace(/~0/g, '~');
-    node = isObject(node) && Object.prototype.hasOwnProperty.call(node, segment) ? node[segment] : Array.isArray(node) ? node[Number(segment)] : undefined;
-    if (node === undefined) return undefined;
-  }
-  return node;
-}
-
-function deref(root: Json, node: unknown): Json | undefined {
-  let current = node;
-  for (let hop = 0; hop < 20 && isObject(current) && typeof current.$ref === 'string'; hop++) current = pointer(root, current.$ref);
-  return isObject(current) && typeof current.$ref !== 'string' ? current : undefined;
-}
 
 class Check {
   passed = 0;
@@ -145,15 +119,15 @@ export function assessQuality(spec: Json, kind: SpecKind): QualityReport {
       checks.successResponse.record(codes.some((c) => /^[23]/.test(c)), label);
       checks.errorResponse.record(codes.some((c) => /^[45]/.test(c) || c === 'default'), label);
 
-      const params = [...(Array.isArray(item.parameters) ? item.parameters : []), ...(Array.isArray(op.parameters) ? op.parameters : [])];
-      for (const raw of params) {
-        const p = deref(spec, raw);
-        if (!p || typeof p.name !== 'string' || (swagger && p.in === 'body')) continue;
+      // Operation-level parameters replace path-level ones with the same name, so each counts once.
+      const params = mergedParameters(spec, item, op);
+      for (const p of params) {
+        if (swagger && p.in === 'body') continue;
         checks.parameterDescription.record(hasText(p.description), `${label}: ${p.name} (${String(p.in)})`);
       }
 
       if (swagger) {
-        const body = params.map((raw) => deref(spec, raw)).find((p) => p?.in === 'body');
+        const body = params.find((p) => p.in === 'body');
         if (body) checks.requestExample.record(bodyHasExample(spec, body, true), label);
       } else {
         const body = deref(spec, op.requestBody);

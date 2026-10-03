@@ -37,8 +37,11 @@ export function CodeSamples({ spec, kind, path, method }: { spec: Record<string,
   const [copied, setCopied] = useState(false);
   const codeRef = useRef<HTMLElement>(null);
   if (!samples.length) return null;
-  // Remember by label so "Python" carries across operations even when a spec sample sits before it.
-  const active = samples.find((s) => s.label === preferred) ?? samples[0];
+  // Generated samples are remembered by language and the spec's own by label, so
+  // the choice carries across operations and a spec sample called "Python"
+  // doesn't shadow the generated one.
+  const keyOf = (s: (typeof samples)[number]) => (s.fromSpec ? `spec:${s.label}` : s.id);
+  const active = samples.find((s) => keyOf(s) === preferred) ?? samples[0];
 
   const copy = async () => {
     try {
@@ -64,7 +67,7 @@ export function CodeSamples({ spec, kind, path, method }: { spec: Record<string,
         <h4>{t('ui.samples.title')}</h4>
         <div className="sp-samples-tabs" role="tablist" aria-label={t('ui.samples.title')}>
           {samples.map((s) => (
-            <button key={s.id} type="button" role="tab" aria-selected={s.id === active.id} className="sp-samples-tab" onClick={() => choose(s.label)}>
+            <button key={s.id} type="button" role="tab" aria-selected={s.id === active.id} className="sp-samples-tab" onClick={() => choose(keyOf(s))}>
               {s.label}
             </button>
           ))}

@@ -71,18 +71,22 @@ interface PageInfo {
 async function readPages(as: 'user' | 'app', type: 'page' | 'blogpost', ids: string[], withBody: boolean): Promise<Map<string, PageInfo>> {
   const found = new Map<string, PageInfo>();
   const requester = as === 'user' ? asUser() : asApp();
-  for (let i = 0; i < ids.length; i += PAGE_BATCH) {
-    const batch = ids.slice(i, i + PAGE_BATCH).join(',');
-    const query = new URLSearchParams({ id: batch, limit: String(PAGE_BATCH) });
-    if (withBody) query.set('body-format', 'atlas_doc_format');
-    const path = type === 'page' ? route`/wiki/api/v2/pages?${query}` : route`/wiki/api/v2/blogposts?${query}`;
-    const res = await requester.requestConfluence(path, { headers: { Accept: 'application/json' } });
-    if (!res.ok) fail('UPSTREAM_ERROR', 'errors.confluencePagesFailed', { status: res.status });
-    const body = (await res.json()) as { results?: Array<{ id: string | number; title?: string; body?: { atlas_doc_format?: { value?: string } } }> };
-    for (const p of body.results ?? []) {
-      found.set(String(p.id), { id: String(p.id), title: p.title ?? '', adf: p.body?.atlas_doc_format?.value });
-    }
-  }
+  const batches: string[][] = [];
+  for (let i = 0; i < ids.length; i += PAGE_BATCH) batches.push(ids.slice(i, i + PAGE_BATCH));
+  // Batches run side by side; there are at most a handful (MAX_SITE_ENTRIES / PAGE_BATCH).
+  await Promise.all(
+    batches.map(async (batchIds) => {
+      const query = new URLSearchParams({ id: batchIds.join(','), limit: String(PAGE_BATCH) });
+      if (withBody) query.set('body-format', 'atlas_doc_format');
+      const path = type === 'page' ? route`/wiki/api/v2/pages?${query}` : route`/wiki/api/v2/blogposts?${query}`;
+      const res = await requester.requestConfluence(path, { headers: { Accept: 'application/json' } });
+      if (!res.ok) fail('UPSTREAM_ERROR', 'errors.confluencePagesFailed', { status: res.status });
+      const body = (await res.json()) as { results?: Array<{ id: string | number; title?: string; body?: { atlas_doc_format?: { value?: string } } }> };
+      for (const p of body.results ?? []) {
+        found.set(String(p.id), { id: String(p.id), title: p.title ?? '', adf: p.body?.atlas_doc_format?.value });
+      }
+    }),
+  );
   return found;
 }
 
@@ -102,14 +106,15 @@ export const pageHasMacro = (adf: string | undefined) => adf === undefined || ad
  * SpecPage macro. Entries for deleted pages, or pages with no macro left, are
  * removed; restricted pages are kept for the readers who can see them.
  */
-async function visibleEntries(entries: Array<{ key: string; value: ApiEntry }>): Promise<ApiListItem[]> {
+async function visibleEntries(entries: Array<{ key: string; value: ApiEntry }>, options: { checkMacro: boolean }): Promise<ApiListItem[]> {
   const stale: string[] = [];
   const items: ApiListItem[] = [];
   for (const type of ['page', 'blogpost'] as const) {
     const ofType = entries.filter((e) => e.value.contentType === type);
     if (!ofType.length) continue;
     const ids = [...new Set(ofType.map((e) => e.value.contentId))];
-    const visible = await readPages('user', type, ids, true);
+    // Page bodies are only fetched where we check the macro is still there.
+    const visible = await readPages('user', type, ids, options.checkMacro);
     const hidden = ids.filter((id) => !visible.has(id));
     // Not visible to the reader: either restricted (keep) or deleted (prune).
     const exists = hidden.length ? await readPages('app', type, hidden, false) : new Map<string, PageInfo>();
@@ -119,7 +124,7 @@ async function visibleEntries(entries: Array<{ key: string; value: ApiEntry }>):
         if (!exists.has(value.contentId)) stale.push(key);
         continue;
       }
-      if (!pageHasMacro(page.adf)) {
+      if (options.checkMacro && !pageHasMacro(page.adf)) {
         stale.push(key);
         continue;
       }
@@ -135,14 +140,19 @@ export async function listSpaceApis(ctx: SecureContext, spaceId: string): Promis
   if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'errors.catalogLicensedOnly');
   if (!/^\d+$/.test(spaceId)) fail('BAD_REQUEST', 'errors.generic');
   const entries = await listByPrefix<ApiEntry>(`${PREFIX}:${keyPart(spaceId)}:`, MAX_ENTRIES);
-  return entries.length ? visibleEntries(entries) : [];
+  return entries.length ? visibleEntries(entries, { checkMacro: true }) : [];
 }
 
-/** Every API on the site the reader can see. `truncated` when there were more entries than one call can check. */
+/**
+ * Every API on the site the reader can see. `truncated` when there were more
+ * entries than one call can check. Page bodies aren't fetched here (that's the
+ * expensive part), so entries for pages whose macro was removed are tidied up
+ * by their space's list rather than this one.
+ */
 export async function listSiteApis(ctx: SecureContext): Promise<{ apis: ApiListItem[]; truncated: boolean }> {
   if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'errors.catalogLicensedOnly');
   // One more than the cap tells us whether anything was left out.
   const entries = await listByPrefix<ApiEntry>(`${PREFIX}:`, MAX_SITE_ENTRIES + 1);
   const truncated = entries.length > MAX_SITE_ENTRIES;
-  return { apis: entries.length ? await visibleEntries(entries.slice(0, MAX_SITE_ENTRIES)) : [], truncated };
+  return { apis: entries.length ? await visibleEntries(entries.slice(0, MAX_SITE_ENTRIES), { checkMacro: false }) : [], truncated };
 }

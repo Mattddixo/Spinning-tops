@@ -1,6 +1,14 @@
 import { Parser, stringify } from '@asyncapi/parser';
 import { expect, test, type Page } from '@playwright/test';
-import { cspViolations, installHarness, proxyCalls } from './harness';
+import { cspViolations, installHarness, proxyCalls, SPEC } from './harness';
+
+const SPEC_WITH_SAMPLE = {
+  ...SPEC,
+  paths: {
+    ...SPEC.paths,
+    '/payments': { ...SPEC.paths['/payments'], get: { ...SPEC.paths['/payments'].get, 'x-codeSamples': [{ lang: 'Python', source: 'client.payments.list()' }] } },
+  },
+};
 
 type Harness = { resolvers: Record<string, (payload: unknown) => unknown>; confluence?: unknown };
 type ConfluenceCall = { path: string; method: string; headers: Record<string, string>; fields: Record<string, string>; files: Record<string, { name: string; text: string }> };
@@ -408,4 +416,18 @@ test('the site-wide catalog lists APIs from every space', async ({ page }) => {
   expect(calls).not.toContain('listSpaceApis');
   expect(await cspViolations(page)).toEqual([]);
   expect(errors).toEqual([]);
+});
+
+test("a spec's own sample doesn't shadow a generated one with the same label", async ({ page }) => {
+  const spec = JSON.parse(JSON.stringify(SPEC_WITH_SAMPLE));
+  await installHarness(page, { spec });
+  await page.goto('/macro.html');
+  await page.locator('.opblock-summary', { hasText: 'List payments' }).click();
+  const samples = page.locator('.sp-samples').first();
+  await expect(samples.getByRole('tab')).toHaveText(['Python', 'cURL', 'JavaScript', 'Python', 'Go', 'Java', 'C#']);
+  await samples.getByRole('tab', { name: 'Python' }).nth(1).click();
+  await expect(samples.locator('code')).toContainText('import requests');
+  await expect(samples.getByRole('tab', { name: 'Python' }).nth(1)).toHaveAttribute('aria-selected', 'true');
+  await samples.getByRole('tab', { name: 'Python' }).nth(0).click();
+  await expect(samples.locator('code')).toHaveText('client.payments.list()');
 });

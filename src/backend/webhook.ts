@@ -87,8 +87,8 @@ type Json = Record<string, unknown>;
 const isObject = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
 const text = (v: unknown) => (typeof v === 'string' && v.length <= 300 ? v : undefined);
 
-/** org/project/repo from an Azure DevOps remote URL (dev.azure.com or the older visualstudio.com form). */
-export function azureRepoFromUrl(raw: string | undefined): string | undefined {
+/** The organization from an Azure DevOps URL: dev.azure.com/{org}/... or {org}.visualstudio.com. */
+export function azureOrgFromUrl(raw: string | undefined): string | undefined {
   if (!raw) return undefined;
   let url: URL;
   try {
@@ -96,22 +96,31 @@ export function azureRepoFromUrl(raw: string | undefined): string | undefined {
   } catch {
     return undefined;
   }
-  const parts = url.pathname.split('/').filter(Boolean).map((p) => {
+  if (url.hostname === 'dev.azure.com') {
+    const first = url.pathname.split('/').filter(Boolean)[0];
     try {
-      return decodeURIComponent(p);
+      return first ? decodeURIComponent(first) : undefined;
     } catch {
-      return p;
+      return first;
     }
-  });
-  const git = parts.indexOf('_git');
-  if (git < 1 || !parts[git + 1]) return undefined;
-  if (url.hostname === 'dev.azure.com' || url.hostname.endsWith('.dev.azure.com')) {
-    return git === 2 ? `${parts[0]}/${parts[1]}/${parts[git + 1]}` : undefined;
   }
-  if (url.hostname.endsWith('.visualstudio.com') && git === 1) {
-    return `${url.hostname.split('.')[0]}/${parts[0]}/${parts[git + 1]}`;
-  }
+  if (url.hostname.endsWith('.visualstudio.com')) return url.hostname.split('.')[0];
   return undefined;
+}
+
+/**
+ * org/project/repo for an Azure DevOps git.push. The project and repo names
+ * come from their own fields, since remote URLs vary (collection segments,
+ * project left out when it matches the repo name); only the organization is
+ * read from a URL.
+ */
+export function azurePushedRepo(payload: Json): string | undefined {
+  const repo = isObject(payload.resource) && isObject(payload.resource.repository) ? payload.resource.repository : undefined;
+  if (!repo) return undefined;
+  const name = text(repo.name);
+  const project = isObject(repo.project) ? text(repo.project.name) : undefined;
+  const org = azureOrgFromUrl(text(repo.remoteUrl)) ?? azureOrgFromUrl(text(repo.url));
+  return name && project && org ? `${org}/${project}/${name}` : undefined;
 }
 
 /**
@@ -132,8 +141,7 @@ function pushedRepo(connection: GitConnection, request: WebTriggerRequest, paylo
     }
     case 'azure': {
       if (payload.eventType !== 'git.push') return undefined;
-      const repo = isObject(payload.resource) && isObject(payload.resource.repository) ? payload.resource.repository : {};
-      return azureRepoFromUrl(text(repo.remoteUrl)) ?? ALL_REPOS;
+      return azurePushedRepo(payload) ?? ALL_REPOS;
     }
     default:
       return undefined;

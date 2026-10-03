@@ -1,11 +1,10 @@
+import { HTTP_METHODS, deref, isObject, mergedParameters, type Json } from './refs';
 import type { SpecKind } from './types';
 
 // Code samples for one operation, built from the spec: an example request
 // (URL with path and query parameters, headers, auth placeholder, body) and
 // then that request written out for a few common languages. Values come from
 // the spec's own examples where it has them, otherwise from the schema.
-
-type Json = Record<string, unknown>;
 
 export const SAMPLE_LANGUAGES = ['curl', 'javascript', 'python', 'go', 'java', 'csharp'] as const;
 export type SampleLanguage = (typeof SAMPLE_LANGUAGES)[number];
@@ -40,37 +39,11 @@ export interface CodeSample {
   fromSpec: boolean;
 }
 
-const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
 const MAX_DEPTH = 6;
 const MAX_PROPERTIES = 30;
 const MAX_SPEC_SAMPLES = 10;
 const MAX_SPEC_SAMPLE_CHARS = 20_000;
 const TOKEN = '<token>';
-
-const isObject = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
-
-function pointer(root: Json, ref: string): unknown {
-  if (!ref.startsWith('#/')) return undefined;
-  let node: unknown = root;
-  for (const raw of ref.slice(2).split('/')) {
-    let segment: string;
-    try {
-      segment = decodeURIComponent(raw);
-    } catch {
-      segment = raw;
-    }
-    segment = segment.replace(/~1/g, '/').replace(/~0/g, '~');
-    node = isObject(node) && Object.prototype.hasOwnProperty.call(node, segment) ? node[segment] : Array.isArray(node) ? node[Number(segment)] : undefined;
-    if (node === undefined) return undefined;
-  }
-  return node;
-}
-
-function deref(root: Json, node: unknown): Json | undefined {
-  let current = node;
-  for (let hop = 0; hop < 20 && isObject(current) && typeof current.$ref === 'string'; hop++) current = pointer(root, current.$ref);
-  return isObject(current) && typeof current.$ref !== 'string' ? current : undefined;
-}
 
 // --- example values ---
 
@@ -159,6 +132,35 @@ function mediaExample(root: Json, media: Json): unknown {
 
 const scalar = (value: unknown) => (value === undefined || value === null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value));
 
+// Swagger 2 collectionFormat separators (multi means "repeat the key").
+const COLLECTION_SEPARATORS: Record<string, string> = { csv: ',', ssv: ' ', tsv: '\t', pipes: '|' };
+
+/**
+ * A parameter value as it goes on the wire, following the default styles:
+ * OpenAPI query parameters use form style with explode (arrays repeat the
+ * key, objects become one pair per property); path and header parameters use
+ * simple style (comma-separated). Swagger 2 uses collectionFormat (csv by default).
+ */
+function serialise(p: Json, value: unknown, swagger: boolean): Array<[string, string]> {
+  const name = p.name as string;
+  if (Array.isArray(value)) {
+    const items = value.map(scalar);
+    if (swagger) {
+      const format = typeof p.collectionFormat === 'string' ? p.collectionFormat : 'csv';
+      return format === 'multi' && p.in === 'query' ? items.map((v) => [name, v]) : [[name, items.join(COLLECTION_SEPARATORS[format] ?? ',')]];
+    }
+    const explode = p.explode !== undefined ? p.explode === true : (p.style ?? 'form') === 'form';
+    return p.in === 'query' && explode ? items.map((v) => [name, v]) : [[name, items.join(',')]];
+  }
+  if (isObject(value) && !swagger) {
+    const entries = Object.entries(value).map(([k, v]) => [k, scalar(v)] as [string, string]);
+    const explode = p.explode !== undefined ? p.explode === true : (p.style ?? (p.in === 'query' ? 'form' : 'simple')) === 'form';
+    if (p.in === 'query' && explode) return entries;
+    return [[name, entries.flat().join(',')]];
+  }
+  return [[name, scalar(value)]];
+}
+
 // --- request ---
 
 function serverUrl(root: Json, kind: SpecKind, item: Json, op: Json): string {
@@ -209,7 +211,7 @@ export function buildSampleRequest(root: Json, kind: SpecKind, path: string, met
   const paths = isObject(root.paths) ? root.paths : {};
   const item = deref(root, paths[path]);
   const lower = method.toLowerCase();
-  const op = item && HTTP_METHODS.includes(lower) ? deref(root, item[lower]) : undefined;
+  const op = item && (HTTP_METHODS as readonly string[]).includes(lower) ? deref(root, item[lower]) : undefined;
   if (!item || !op) return undefined;
   const swagger = kind === 'swagger-2.0';
 
@@ -220,13 +222,7 @@ export function buildSampleRequest(root: Json, kind: SpecKind, path: string, met
   const files: string[] = [];
   let swaggerBody: Json | undefined;
 
-  // Operation parameters override path-level ones with the same name and location.
-  const params = new Map<string, Json>();
-  for (const raw of [...(Array.isArray(item.parameters) ? item.parameters : []), ...(Array.isArray(op.parameters) ? op.parameters : [])]) {
-    const p = deref(root, raw);
-    if (p && typeof p.name === 'string' && typeof p.in === 'string') params.set(`${p.in}:${p.name}`, p);
-  }
-  for (const p of params.values()) {
+  for (const p of mergedParameters(root, item, op)) {
     const name = p.name as string;
     if (swagger && p.in === 'body') {
       swaggerBody = p;
@@ -239,9 +235,9 @@ export function buildSampleRequest(root: Json, kind: SpecKind, path: string, met
       continue;
     }
     // Optional query and header parameters are left out to keep samples short.
-    if (p.in === 'path') pathValues.set(name, scalar(value) || name);
-    else if (p.in === 'query' && p.required === true) query.push([name, scalar(value)]);
-    else if (p.in === 'header' && p.required === true) headers.push([name, scalar(value)]);
+    if (p.in === 'path') pathValues.set(name, serialise(p, value, swagger)[0][1] || name);
+    else if (p.in === 'query' && p.required === true) query.push(...serialise(p, value, swagger));
+    else if (p.in === 'header' && p.required === true) headers.push([name, serialise(p, value, swagger)[0][1]]);
   }
 
   authHeaders(root, kind, op, headers, query);

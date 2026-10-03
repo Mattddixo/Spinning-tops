@@ -100,6 +100,45 @@ describe('buildSampleRequest', () => {
     expect(r.body).toEqual({ kind: 'json', value: { n: 3 } });
   });
 
+  it('writes array and object parameters the way servers expect them', () => {
+    const spec: Json = {
+      openapi: '3.0.0',
+      info: { title: 't', version: '1' },
+      servers: [{ url: 'https://api.example.com' }],
+      paths: {
+        '/pets/{ids}': {
+          get: {
+            parameters: [
+              { name: 'ids', in: 'path', required: true, schema: { type: 'array', items: { type: 'integer' } }, example: [1, 2] },
+              { name: 'status', in: 'query', required: true, schema: { type: 'array', items: { type: 'string', default: 'available' } } },
+              { name: 'tags', in: 'query', required: true, explode: false, schema: { type: 'array', items: { type: 'string' } }, example: ['a', 'b'] },
+              { name: 'filter', in: 'query', required: true, schema: { type: 'object', properties: { color: { type: 'string', example: 'red' } } } },
+            ],
+            responses: {},
+          },
+        },
+      },
+    };
+    expect(buildSampleRequest(spec, 'openapi-3.0', '/pets/{ids}', 'get')!.url).toBe('https://api.example.com/pets/1%2C2?status=available&tags=a%2Cb&color=red');
+    const swagger: Json = {
+      swagger: '2.0',
+      info: { title: 't', version: '1' },
+      host: 'petstore.example.com',
+      paths: {
+        '/pet/findByStatus': {
+          get: {
+            parameters: [
+              { name: 'status', in: 'query', required: true, type: 'array', items: { type: 'string', enum: ['available', 'sold'] } },
+              { name: 'tag', in: 'query', required: true, type: 'array', collectionFormat: 'multi', items: { type: 'string', default: 'x' } },
+            ],
+            responses: {},
+          },
+        },
+      },
+    };
+    expect(buildSampleRequest(swagger, 'swagger-2.0', '/pet/findByStatus', 'get')!.url).toBe('https://petstore.example.com/pet/findByStatus?status=available&tag=x');
+  });
+
   it('returns nothing for unknown operations', () => {
     expect(buildSampleRequest(SPEC, 'openapi-3.0', '/nope', 'get')).toBeUndefined();
     expect(buildSampleRequest(SPEC, 'openapi-3.0', '/pets/{petId}', 'constructor')).toBeUndefined();

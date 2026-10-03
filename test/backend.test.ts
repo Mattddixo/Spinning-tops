@@ -503,7 +503,8 @@ describe('size and time limits', () => {
   });
 
   it('drops cached Git specs when the repository generation changes', async () => {
-    await seedGithub();
+    // Only connections with a webhook read the generation.
+    await seedGithub({ webhookEnabled: true });
     h.fetchMock.mockResolvedValue(response(200, ROOT_YAML.replace("{ $ref: './schemas/payment.yaml' }", '{ type: string }')));
     await call('loadSpec', {}, { extension: { config: gitConfig } });
     expect((await call('loadSpec', {}, { extension: { config: gitConfig } })).value.meta.fromCache).toBe(true);
@@ -1016,7 +1017,7 @@ describe('Git webhooks', () => {
     expect(await status(post({ 'X-Event-Key': 'repo:push', 'X-Hub-Signature': sign('x', bbBody) }, bbBody, 'b1'))).toBe(401);
     expect(JSON.parse((await post({ 'X-Event-Key': 'repo:push', 'X-Hub-Signature': sign(bb, bbBody) }, bbBody, 'b1')).body).message).toBe('Refreshed ws/api');
 
-    const azBody = { eventType: 'git.push', resource: { repository: { remoteUrl: 'https://contoso@dev.azure.com/contoso/Fabrikam%20Fiber/_git/payments' } } };
+    const azBody = { eventType: 'git.push', resource: { repository: { name: 'payments', project: { name: 'Fabrikam Fiber' }, remoteUrl: 'https://contoso@dev.azure.com/contoso/Fabrikam%20Fiber/_git/payments' } } };
     const basic = (pw: string) => `Basic ${Buffer.from(`anyone:${pw}`).toString('base64')}`;
     expect(await status(post({ Authorization: basic('wrong') }, azBody, 'a1'))).toBe(401);
     expect(JSON.parse((await post({ Authorization: basic(az) }, azBody, 'a1')).body).message).toBe('Refreshed contoso/Fabrikam Fiber/payments');
@@ -1051,13 +1052,17 @@ describe('Git webhooks', () => {
   });
 });
 
-describe('azureRepoFromUrl', () => {
-  it('reads both Azure DevOps URL forms', async () => {
-    const { azureRepoFromUrl } = await import('../src/backend/webhook');
-    expect(azureRepoFromUrl('https://dev.azure.com/contoso/Web/_git/site')).toBe('contoso/Web/site');
-    expect(azureRepoFromUrl('https://contoso.visualstudio.com/Web/_git/site')).toBe('contoso/Web/site');
-    expect(azureRepoFromUrl('https://dev.azure.com/contoso/_git/site')).toBeUndefined();
-    expect(azureRepoFromUrl('not a url')).toBeUndefined();
+describe('Azure DevOps push payloads', () => {
+  it('reads the repo from its own fields and the organization from the URL', async () => {
+    const { azurePushedRepo } = await import('../src/backend/webhook');
+    const push = (remoteUrl: string, project = 'Web', name = 'site') => ({ resource: { repository: { name, project: { name: project }, remoteUrl } } });
+    expect(azurePushedRepo(push('https://dev.azure.com/contoso/Web/_git/site'))).toBe('contoso/Web/site');
+    expect(azurePushedRepo(push('https://contoso@dev.azure.com/contoso/Web/_git/site'))).toBe('contoso/Web/site');
+    // collection-style and project-less URLs from Azure's own samples
+    expect(azurePushedRepo(push('https://contoso.visualstudio.com/DefaultCollection/_git/site'))).toBe('contoso/Web/site');
+    expect(azurePushedRepo(push('https://contoso.visualstudio.com/_git/site', 'site'))).toBe('contoso/site/site');
+    expect(azurePushedRepo(push('https://example.com/x'))).toBeUndefined();
+    expect(azurePushedRepo({ resource: {} })).toBeUndefined();
   });
 });
 
@@ -1083,6 +1088,8 @@ describe('site-wide API catalog', () => {
     expect(res.value.apis.map((a: { title: string; spaceKey: string }) => `${a.title} (${a.spaceKey})`)).toEqual(['Accounts (OPS)', 'Payments (ENG)']);
     // Restricted from this reader, but not deleted, so kept for others.
     expect(await h.memory.kvs.get('api:999:303:m-303')).toBeDefined();
+    // The site list doesn't download page bodies.
+    expect(h.userConfluence.mock.calls.map(([path]) => String(path)).some((p) => p.includes('body-format'))).toBe(false);
   });
 
   it('records the space key with each entry', async () => {

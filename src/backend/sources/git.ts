@@ -176,7 +176,8 @@ export async function gitSource(
       return webFileUrl(connection.provider, connection.webBaseUrl, repo, path, ref || undefined, azureVersionType);
     },
     // The repo generation is bumped by Git webhooks, which invalidates cached copies immediately.
-    cacheKey: JSON.stringify(['git', connection.id, connection.updatedAt, await getRepoGeneration(connection.id, repo), repo, ref, path]),
+    // Only connections with a webhook can have a repo generation, so others skip the lookups.
+    cacheKey: JSON.stringify(['git', connection.id, connection.updatedAt, connection.webhookEnabled ? await getRepoGeneration(connection.id, repo) : '', repo, ref, path]),
     baseUrl: syntheticUrl('repo', path),
     async read(url: string) {
       // SwaggerHub returns the resolved definition, so there are no other files to fetch.

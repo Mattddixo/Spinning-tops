@@ -1,3 +1,4 @@
+import { HTTP_METHODS, isObject, mergedParameters, resolveRef, type Json } from './refs';
 import type { ChangeCode, ChangeLevel, SpecChange, SpecDiff, SpecKind } from './types';
 
 // Compare two OpenAPI or Swagger documents and list what changed for API
@@ -15,15 +16,14 @@ import type { ChangeCode, ChangeLevel, SpecChange, SpecDiff, SpecKind } from './
 //
 // Both documents are expected to be bundled (only local $refs left).
 
-type Json = Record<string, unknown>;
 type Direction = 'request' | 'response';
 
-const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
 const MAX_CHANGES = 500;
+// Safety limit on what's collected before sorting; far above MAX_CHANGES so
+// breaking changes found late still make the cut.
+const MAX_COLLECTED = 20_000;
 const MAX_DEPTH = 12;
-const MAX_REF_HOPS = 20;
 
-const isObject = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 interface Side {
   root: Json;
@@ -60,45 +60,13 @@ class Collector {
     // The same schema change can show up once per media type; list it once.
     const key = JSON.stringify(change);
     if (this.keys.has(key)) return;
-    if (this.changes.length >= MAX_CHANGES) {
+    if (this.changes.length >= MAX_COLLECTED) {
       this.truncated = true;
       return;
     }
     this.keys.add(key);
     this.changes.push(change);
   }
-}
-
-// --- $ref handling ---
-
-function pointer(root: Json, ref: string): unknown {
-  if (ref === '#') return root;
-  if (!ref.startsWith('#/')) return undefined;
-  let node: unknown = root;
-  for (const raw of ref.slice(2).split('/')) {
-    let segment: string;
-    try {
-      segment = decodeURIComponent(raw);
-    } catch {
-      segment = raw;
-    }
-    segment = segment.replace(/~1/g, '/').replace(/~0/g, '~');
-    if (Array.isArray(node)) node = node[Number(segment)];
-    else if (isObject(node)) node = Object.prototype.hasOwnProperty.call(node, segment) ? node[segment] : undefined;
-    else return undefined;
-  }
-  return node;
-}
-
-/** Follow $refs. Returns the target and the last ref followed (for cycle checks). */
-function deref(root: Json, node: unknown): { value?: Json; ref?: string } {
-  let current = node;
-  let ref: string | undefined;
-  for (let hop = 0; hop < MAX_REF_HOPS && isObject(current) && typeof current.$ref === 'string'; hop++) {
-    ref = current.$ref;
-    current = pointer(root, current.$ref);
-  }
-  return isObject(current) && typeof current.$ref !== 'string' ? { value: current, ref } : { ref };
 }
 
 /** Fold allOf parts into one schema so properties and required lists can be compared. */
@@ -109,7 +77,7 @@ function flatten(root: Json, schema: Json, depth = 0): Json {
   const properties: Json = isObject(rest.properties) ? { ...rest.properties } : {};
   const required = new Set<string>(Array.isArray(rest.required) ? rest.required.filter((r): r is string => typeof r === 'string') : []);
   for (const part of allOf as unknown[]) {
-    const resolved = deref(root, part).value;
+    const resolved = resolveRef(root, part).value;
     if (!resolved) continue;
     const flat = flatten(root, resolved, depth + 1);
     if (isObject(flat.properties)) Object.assign(properties, flat.properties);
@@ -158,8 +126,8 @@ interface SchemaWalk {
 
 function compareSchema(walk: SchemaWalk, baseRaw: unknown, headRaw: unknown, location: string, depth: number) {
   if (depth > MAX_DEPTH) return;
-  const b = deref(walk.base.root, baseRaw);
-  const h = deref(walk.head.root, headRaw);
+  const b = resolveRef(walk.base.root, baseRaw);
+  const h = resolveRef(walk.head.root, headRaw);
   if (!b.value || !h.value) return;
   if (!walk.out.spend()) return;
   // Recursive schemas: stop when a pair of refs is already being compared
@@ -243,7 +211,7 @@ function compareResolved(walk: SchemaWalk, baseValue: Json, headValue: Json, loc
   const hr = requiredOf(head);
   // readOnly properties aren't sent in requests, writeOnly ones aren't returned.
   const hidden = (raw: unknown, root: Json) => {
-    const s = deref(root, raw).value;
+    const s = resolveRef(root, raw).value;
     return isRequest ? s?.readOnly === true : s?.writeOnly === true;
   };
   for (const name of new Set([...Object.keys(bp), ...Object.keys(hp)])) {
@@ -256,7 +224,7 @@ function compareResolved(walk: SchemaWalk, baseValue: Json, headValue: Json, loc
       if (isRequest) out.add(head.additionalProperties === false ? 'breaking' : 'warning', 'propertyRemoved', at);
       else out.add(br.has(name) ? 'breaking' : 'warning', 'propertyRemoved', at);
     } else if (!inBase && inHead) {
-      if (name in bp) continue;
+      // Also covers a property that was read-only (or write-only) and now isn't.
       out.add(isRequest && hr.has(name) ? 'breaking' : 'info', isRequest && hr.has(name) ? 'requiredPropertyAdded' : 'propertyAdded', at);
     } else if (inBase && inHead) {
       if (!br.has(name) && hr.has(name)) out.add(isRequest ? 'breaking' : 'info', 'propertyBecameRequired', at);
@@ -319,10 +287,8 @@ function normalise(side: Side, path: string, item: Json, op: Json): NormalOperat
   const positions = pathParamNames(path);
   const consumes = asStrings(op.consumes) ?? asStrings(root.consumes) ?? ['application/json'];
 
-  const all = [...(Array.isArray(item.parameters) ? item.parameters : []), ...(Array.isArray(op.parameters) ? op.parameters : [])];
-  for (const raw of all) {
-    const p = deref(root, raw).value;
-    if (!p || typeof p.name !== 'string' || typeof p.in !== 'string') continue;
+  for (const p of mergedParameters(root, item, op)) {
+    if (typeof p.name !== 'string' || typeof p.in !== 'string') continue;
     if (swagger && p.in === 'body') {
       body = { required: p.required === true, content: new Map(consumes.map((mt) => [mt, p.schema])) };
       continue;
@@ -337,7 +303,6 @@ function normalise(side: Side, path: string, item: Json, op: Json): NormalOperat
     let schema: unknown = p.schema;
     if (swagger) schema = swaggerParamSchema(p);
     else if (schema === undefined && isObject(p.content)) schema = Object.values(p.content).map((c) => (isObject(c) ? c.schema : undefined))[0];
-    // Later (operation-level) definitions override path-level ones.
     params.set(key, { label: `${p.name} (${p.in})`, required: p.in === 'path' || p.required === true, schema });
   }
 
@@ -352,7 +317,7 @@ function normalise(side: Side, path: string, item: Json, op: Json): NormalOperat
     body = { required: false, content: new Map((types.length ? types : ['application/x-www-form-urlencoded']).map((mt) => [mt, schema])) };
   }
   if (!swagger && op.requestBody !== undefined) {
-    const rb = deref(root, op.requestBody).value;
+    const rb = resolveRef(root, op.requestBody).value;
     if (rb) body = { required: rb.required === true, content: new Map(Object.entries(isObject(rb.content) ? rb.content : {}).map(([mt, c]) => [mt, isObject(c) ? c.schema : undefined])) };
   }
 
@@ -360,7 +325,7 @@ function normalise(side: Side, path: string, item: Json, op: Json): NormalOperat
   const produces = asStrings(op.produces) ?? asStrings(root.produces) ?? ['application/json'];
   for (const [status, raw] of Object.entries(isObject(op.responses) ? op.responses : {})) {
     if (status.startsWith('x-')) continue;
-    const r = deref(root, raw).value;
+    const r = resolveRef(root, raw).value;
     if (!r) continue;
     if (swagger) responses.set(status, new Map(r.schema !== undefined ? produces.map((mt) => [mt, r.schema]) : []));
     else responses.set(status, new Map(Object.entries(isObject(r.content) ? r.content : {}).map(([mt, c]) => [mt, isObject(c) ? c.schema : undefined])));
@@ -386,7 +351,7 @@ function operations(side: Side): Map<string, NormalOperation> {
   const out = new Map<string, NormalOperation>();
   const paths = isObject(side.root.paths) ? side.root.paths : {};
   for (const [path, rawItem] of Object.entries(paths)) {
-    const item = deref(side.root, rawItem).value;
+    const item = resolveRef(side.root, rawItem).value;
     if (!item) continue;
     for (const method of HTTP_METHODS) {
       const op = item[method];
@@ -476,11 +441,13 @@ export function diffSpecs(baseSpec: Json, baseKind: SpecKind, headSpec: Json, he
     if (!baseOps.has(key)) out.add('info', 'operationAdded', { operation: `${key.split(' ')[0]} ${h.path}` });
   }
 
-  const changes = out.changes
+  // Sort everything first, so a long list is cut from the least important end.
+  const sorted = out.changes
     .map((c, i) => ({ c, i }))
     .sort((x, y) => LEVEL_ORDER[x.c.level] - LEVEL_ORDER[y.c.level] || (x.c.operation ?? '').localeCompare(y.c.operation ?? '') || x.i - y.i)
     .map(({ c }) => c);
+  // Counts cover every change found, not just the ones listed.
   const counts = { breaking: 0, warning: 0, info: 0 };
-  for (const c of changes) counts[c.level]++;
-  return { changes, counts, truncated: out.truncated };
+  for (const c of sorted) counts[c.level]++;
+  return { changes: sorted.slice(0, MAX_CHANGES), counts, truncated: out.truncated || sorted.length > MAX_CHANGES };
 }

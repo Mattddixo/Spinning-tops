@@ -1,5 +1,6 @@
 import { parse as parseYaml, YAMLParseError } from 'yaml';
 import { appError } from './messages';
+import { deref } from './refs';
 import type { OperationSummary, Result, SpecKind, SpecSummary } from './types';
 
 const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
@@ -115,16 +116,6 @@ const tagNames = (value: unknown) =>
 
 const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
 
-// Local refs only (the bundler has already inlined everything else).
-function deref(spec: JsonObject, value: unknown): unknown {
-  if (!isObject(value) || typeof value.$ref !== 'string' || !value.$ref.startsWith('#/')) return value;
-  let node: unknown = spec;
-  for (const part of value.$ref.slice(2).split('/')) {
-    if (!isObject(node)) return undefined;
-    node = node[part.replace(/~1/g, '/').replace(/~0/g, '~')];
-  }
-  return node;
-}
 
 // AsyncAPI operations in the same shape as HTTP ones: method is the action
 // (SEND/RECEIVE in 3.x, PUBLISH/SUBSCRIBE in 2.x), path is the channel address.

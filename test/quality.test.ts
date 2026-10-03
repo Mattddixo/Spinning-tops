@@ -67,6 +67,15 @@ describe('assessQuality', () => {
     expect(report.score).toBeGreaterThan(50);
   });
 
+  it('counts a parameter the operation overrides once', () => {
+    const spec = clone(GOOD);
+    const item = (spec.paths as Json)['/pets/{id}'] as Json;
+    item.parameters = [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }];
+    (item.get as Json).parameters = [{ name: 'id', in: 'path', required: true, description: 'Pet ID', schema: { type: 'string' } }];
+    const params = check(assessQuality(spec, 'openapi-3.0'), 'parameterDescription');
+    expect(params).toMatchObject({ total: 2, failed: 1, examples: ['PUT /pets/{id}: id (path)'] });
+  });
+
   it('weighs important checks double', () => {
     const noDescription = clone(GOOD);
     delete (noDescription.info as Json).description;

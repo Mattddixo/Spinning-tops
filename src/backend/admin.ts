@@ -150,7 +150,9 @@ export async function enableWebhook(id: string): Promise<{ connection: GitConnec
   if (!WEBHOOK_PROVIDERS.has(connection.provider)) return fail('BAD_REQUEST', 'errors.webhookUnsupported');
   const secret = randomBytes(32).toString('hex');
   await setWebhookSecret(connection.id, secret);
-  const updated: GitConnection = { ...connection, webhookEnabled: true };
+  // updatedAt is part of the spec cache key, so changing it here (and when
+  // turning off) starts the connection's cache afresh.
+  const updated: GitConnection = { ...connection, webhookEnabled: true, updatedAt: new Date().toISOString() };
   await saveConnectionRecord(updated);
   return { connection: updated, url: await webhookUrlFor(connection.id), secret };
 }
@@ -160,8 +162,9 @@ export async function disableWebhook(id: string): Promise<GitConnection> {
   if (!connection) return fail('NOT_FOUND', 'errors.connectionGone');
   await deleteWebhookSecret(connection.id);
   const { webhookEnabled: _off, ...rest } = connection;
-  await saveConnectionRecord(rest);
-  return rest;
+  const updated: GitConnection = { ...rest, updatedAt: new Date().toISOString() };
+  await saveConnectionRecord(updated);
+  return updated;
 }
 
 export async function testConnection(ctx: SecureContext, args: { id: string; repo: string; path?: string; ref?: string }) {

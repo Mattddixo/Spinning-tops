@@ -223,6 +223,27 @@ describe('diffSpecs', () => {
     expect(find(changes, 'requestBodyBecameRequired').map((c) => c.operation)).toEqual(['POST /items']);
   });
 
+  it('keeps breaking changes when a long list is cut', () => {
+    const base: Json = { openapi: '3.0.0', info: { title: 't', version: '1' }, paths: {} };
+    const head: Json = { openapi: '3.0.0', info: { title: 't', version: '2' }, paths: {} };
+    // 600 harmless additions walked first, then one removal at the end.
+    for (let i = 0; i < 600; i++) (head.paths as Json)[`/a${i}`] = { get: { responses: { '200': { description: 'ok' } } } };
+    (base.paths as Json)['/zzz'] = { get: { responses: { '200': { description: 'ok' } } } };
+    const result = diff(head, base);
+    expect(result.changes[0]).toEqual({ level: 'breaking', code: 'operationRemoved', operation: 'GET /zzz' });
+    expect(result.counts).toEqual({ breaking: 1, warning: 0, info: 600 });
+    expect(result.changes).toHaveLength(500);
+    expect(result.truncated).toBe(true);
+  });
+
+  it('reports a read-only property that becomes a required request field', () => {
+    const base = clone(BASE);
+    at(base, ['paths', '/pets', 'post']).requestBody = { content: { 'application/json': { schema: { $ref: '#/components/schemas/Pet' } } } };
+    const head = clone(base);
+    at(head, ['components', 'schemas', 'Pet', 'properties']).id = { type: 'string' };
+    expect(diff(head, base).changes).toContainEqual({ level: 'breaking', code: 'requiredPropertyAdded', operation: 'POST /pets', section: 'requestBody', location: 'id' });
+  });
+
   it('caps very long change lists', () => {
     const base: Json = { openapi: '3.0.0', info: { title: 't', version: '1' }, paths: {} };
     const paths = base.paths as Json;
