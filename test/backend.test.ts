@@ -1063,6 +1063,24 @@ describe('Azure DevOps push payloads', () => {
     expect(azurePushedRepo(push('https://contoso.visualstudio.com/_git/site', 'site'))).toBe('contoso/site/site');
     expect(azurePushedRepo(push('https://example.com/x'))).toBeUndefined();
     expect(azurePushedRepo({ resource: {} })).toBeUndefined();
+    // Microsoft's documented git.push sample (trimmed): collection-style URLs everywhere.
+    const documented = {
+      eventType: 'git.push',
+      resource: {
+        repository: {
+          id: 'f5f5f5f5-aaaa-bbbb-cccc-d6d6d6d6d6d6',
+          name: 'Fabrikam-Fiber-Git',
+          url: 'https://dev.azure.com/fabrikam-fiber-inc/DefaultCollection/_apis/repos/git/repositories/f5f5f5f5-aaaa-bbbb-cccc-d6d6d6d6d6d6',
+          project: { id: 'a6a6a6a6-bbbb-cccc-dddd-e7e7e7e7e7e7', name: 'Fabrikam-Fiber-Git' },
+          remoteUrl: 'https://dev.azure.com/fabrikam-fiber-inc/DefaultCollection/_git/Fabrikam-Fiber-Git',
+        },
+      },
+      resourceContainers: { account: { id: 'bbbb1b1b-cc2c-dd3d-ee4e-ffffff5f5f5f', baseUrl: 'https://dev.azure.com/fabrikam-fiber-inc/' } },
+    };
+    expect(azurePushedRepo(documented)).toBe('fabrikam-fiber-inc/Fabrikam-Fiber-Git/Fabrikam-Fiber-Git');
+    // Without URLs on the repository, the organization comes from resourceContainers.
+    const { url: _u, remoteUrl: _r, ...bare } = documented.resource.repository;
+    expect(azurePushedRepo({ ...documented, resource: { repository: bare } })).toBe('fabrikam-fiber-inc/Fabrikam-Fiber-Git/Fabrikam-Fiber-Git');
   });
 });
 

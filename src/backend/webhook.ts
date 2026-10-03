@@ -112,14 +112,16 @@ export function azureOrgFromUrl(raw: string | undefined): string | undefined {
  * org/project/repo for an Azure DevOps git.push. The project and repo names
  * come from their own fields, since remote URLs vary (collection segments,
  * project left out when it matches the repo name); only the organization is
- * read from a URL.
+ * read from a URL. With "Resource details to send" set to Minimal or None
+ * these fields are missing, and the caller refreshes the whole connection.
  */
 export function azurePushedRepo(payload: Json): string | undefined {
   const repo = isObject(payload.resource) && isObject(payload.resource.repository) ? payload.resource.repository : undefined;
   if (!repo) return undefined;
   const name = text(repo.name);
   const project = isObject(repo.project) ? text(repo.project.name) : undefined;
-  const org = azureOrgFromUrl(text(repo.remoteUrl)) ?? azureOrgFromUrl(text(repo.url));
+  const account = isObject(payload.resourceContainers) && isObject(payload.resourceContainers.account) ? payload.resourceContainers.account : {};
+  const org = azureOrgFromUrl(text(repo.remoteUrl)) ?? azureOrgFromUrl(text(repo.url)) ?? azureOrgFromUrl(text(account.baseUrl));
   return name && project && org ? `${org}/${project}/${name}` : undefined;
 }
 

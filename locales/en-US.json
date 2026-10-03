@@ -277,7 +277,7 @@
       "githubWebhook": "In the repository or organization: Settings > Webhooks > Add webhook. Paste the URL as the payload URL, choose application/json, paste the secret, and pick “Just the push event”.",
       "gitlabWebhook": "In the project or group: Settings > Webhooks > Add new webhook. Paste the URL, put the secret in “Secret token”, and tick Push events and Tag push events.",
       "bitbucketWebhook": "In the repository: Repository settings > Webhooks > Add webhook. Paste the URL and the secret, and choose the Repository push trigger.",
-      "azureWebhook": "In the project: Project settings > Service hooks > Create subscription > Web Hooks, trigger “Code pushed”. Paste the URL, and use the secret as the basic authentication password (any username)."
+      "azureWebhook": "In the project: Project settings > Service hooks > Create subscription > Web Hooks, trigger “Code pushed”. Paste the URL, use the secret as the basic authentication password (any username), and leave “Resource details to send” on All."
     },
     "admin": {
       "loading": "Loading SpecPage settings…",

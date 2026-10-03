@@ -108,6 +108,7 @@ All text shown to users is in `locales/en-US.json`. Backend errors are sent with
 - Pasted specs up to 100,000 characters
 - 10 approved hosts per list (Forge limit). Wildcards like `*.example.com` work.
 - Try it out: OAuth flows that need a sign-in pop-up (authorization code, implicit, OpenID Connect) can't run inside Confluence; paste a token instead. No Try it out for AsyncAPI.
+- Azure DevOps webhooks need "Resource details to send" left on All (the default) to refresh just the pushed repo; with Minimal or None every repo on that connection is refreshed.
 - Comparisons work for Git and attachment sources, OpenAPI and Swagger only. `oneOf`/`anyOf` edits are flagged to check by hand rather than judged. Lists show up to 500 changes, breaking ones first; the counts cover everything found.
 - Tag/path filters apply to OpenAPI and Swagger only. AsyncAPI documents are shown whole.
 - AsyncAPI message payloads in Avro, RAML or Protobuf schema formats aren't supported yet (JSON Schema and AsyncAPI schemas are).
