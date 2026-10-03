@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { appError } from '../../../../src/shared/messages';
 import { buildSearchText, filterSpec, summarizeSpec } from '../../../../src/shared/spec';
 import type { AppError, LoadSpecResponse, MacroConfig } from '../../../../src/shared/types';
-import { call, invoke, toAppError } from '../api';
+import { call, forReaders, invoke, toAppError } from '../api';
 import { mount } from '../bootstrap';
 import { ChangesPanel } from '../components/ChangesPanel';
 import { SpecView } from '../components/SpecView';
@@ -86,7 +86,7 @@ function MacroApp() {
   if (state.status === 'loading') return <Loading label={t('ui.macro.loading')} />;
 
   if (state.status === 'error') {
-    const { error } = state;
+    const error = forReaders(state.error, isEditing, 'errors.docsUnavailable');
     return (
       <div className="sp-macro">
         <ErrorMessage
@@ -180,7 +180,7 @@ function MacroApp() {
       ) : null}
       {canCompare && showChanges && compareSource ? <ChangesPanel sourceType={compareSource} onClose={() => setShowChanges(false)} /> : null}
       <div className={maxHeight ? 'sp-macro-scroll' : undefined} style={maxHeight ? { maxHeight } : undefined}>
-        <SpecView kind={data.summary.kind} spec={spec} config={config} tryItOutAllowed={data.tryItOutAllowed} />
+        <SpecView kind={data.summary.kind} spec={spec} config={config} tryItOutAllowed={data.tryItOutAllowed} showSetupErrors={isEditing} />
       </div>
     </div>
   );

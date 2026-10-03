@@ -442,3 +442,37 @@ test('the settings page gives the backend a copy of the approved host lists', as
   expect(await cspViolations(page)).toEqual([]);
   expect(errors).toEqual([]);
 });
+
+const NOT_SYNCED = {
+  code: 'EGRESS_NOT_APPROVED',
+  key: 'errors.hostsNotSynced',
+  message: "SpecPage doesn't have the approved host lists yet.",
+  hintKey: 'hints.openSettingsToSync',
+  hint: 'A Confluence admin can fix this by opening SpecPage settings once.',
+};
+
+test('readers get a plain message for errors only an admin can fix; editors get the details', async ({ page }) => {
+  await installHarness(page, { config: { sourceType: 'url', url: 'https://docs.example.com/openapi.yaml' }, loadError: NOT_SYNCED });
+  await page.goto('/macro.html');
+  await expect(page.getByText("These API docs aren't available right now.")).toBeVisible();
+  await expect(page.getByText('opening SpecPage settings')).toHaveCount(0);
+
+  await installHarness(page, { config: { sourceType: 'url', url: 'https://docs.example.com/openapi.yaml' }, loadError: NOT_SYNCED, isEditing: true });
+  await page.goto('/macro.html');
+  await expect(page.getByText("SpecPage doesn't have the approved host lists yet.")).toBeVisible();
+  await expect(page.getByText('A Confluence admin can fix this by opening SpecPage settings once.')).toBeVisible();
+});
+
+test("Try it out tells readers it isn't available rather than asking for an admin", async ({ page }) => {
+  await installHarness(page, { tryItOut: true });
+  await page.addInitScript((error) => {
+    const h = (window as unknown as { __SPECPAGE_HARNESS__: Harness }).__SPECPAGE_HARNESS__;
+    h.resolvers.proxyRequest = () => ({ ok: false, error });
+  }, NOT_SYNCED);
+  await page.goto('/macro.html');
+  await page.locator('.opblock-summary', { hasText: 'List payments' }).click();
+  await page.getByRole('button', { name: 'Try it out' }).click();
+  await page.getByRole('button', { name: 'Execute' }).click();
+  await expect(page.getByText("Try it out isn't available right now.").first()).toBeVisible();
+  await expect(page.getByText("doesn't have the approved host lists")).toHaveCount(0);
+});

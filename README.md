@@ -101,6 +101,14 @@ If you change permissions in manifest.yml, run `forge install --upgrade` after d
 
 Webhooks need the web trigger in manifest.yml to be deployed; after that the URL stays the same across deploys.
 
+## Upgrading
+
+After deploying a version that includes the per-list host check (October 2026), a Confluence admin needs to open **SpecPage settings** once. Until then, Try it out and URL sources are refused.
+
+Why: Forge checks outgoing requests against every approved host, but the app's backend can't read which list (Git, specs or Try it out) a host was approved in. The settings page saves a copy of the lists when it opens, and the backend uses that copy to make sure each host is only used for its own purpose. Before the first copy exists, the safe default is to allow nothing extra. Readers see a plain "not available right now" message; editors see what to do.
+
+The same applies whenever hosts are approved directly in Atlassian Administration rather than on the SpecPage settings page: open the settings page once afterwards.
+
 ## Maintenance
 
 `npm run maintenance` checks both package folders for outdated packages and known vulnerabilities, compares your Node version with the Forge runtime in manifest.yml, and writes `maintenance-report.md`. Add `-- --full` to also run typecheck, lint, tests and build. It exits with code 1 when something needs attention soon (a high or critical vulnerability, or a failed check).

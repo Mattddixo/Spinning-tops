@@ -5,7 +5,7 @@ import '../styles/swagger-theme.css';
 import { appError } from '../../../../src/shared/messages';
 import { applyServerOverride, detectKind, filterSpec } from '../../../../src/shared/spec';
 import { MAX_BINARY_REQUEST_BYTES, type MacroConfig, type ProxyRequest, type ProxyResponse, type SpecKind } from '../../../../src/shared/types';
-import { call, invoke, RequestFailed } from '../api';
+import { call, forReaders, invoke, RequestFailed } from '../api';
 import { useT } from '../i18n';
 import type { Translate } from '../../../../src/shared/i18n';
 import { base64ToBytes, bytesToBase64 } from '../spec-transport';
@@ -17,6 +17,8 @@ interface ApiDocsProps {
   tryItOutAllowed: boolean;
   // unsaved config, so Try it out works in the preview
   preview?: MacroConfig;
+  /** Show errors only an admin can fix in full (editors and the preview). */
+  showSetupErrors?: boolean;
 }
 
 type SwaggerRequest = {
@@ -65,7 +67,7 @@ function hasHeader(headers: Record<string, string>, name: string) {
 
 // swagger-client uses request.userFetch if it's set, so we point it at the
 // backend proxy instead of the browser's fetch.
-function proxyFetch(t: Translate, preview?: MacroConfig) {
+function proxyFetch(t: Translate, preview: MacroConfig | undefined, showSetupErrors: boolean) {
   return async (url: string, init: { method?: string; headers?: Record<string, string>; body?: unknown }): Promise<Response> => {
     const method = (init.method ?? 'GET').toUpperCase();
     const headers = { ...(init.headers ?? {}) };
@@ -79,7 +81,7 @@ function proxyFetch(t: Translate, preview?: MacroConfig) {
       result = await call(invoke('proxyRequest', { request: { url, method, headers, ...body }, ...(preview ? { preview } : {}) }));
     } catch (err) {
       // Swagger UI shows thrown errors under the request, so give it readable text.
-      const error = err instanceof RequestFailed ? err.error : undefined;
+      const error = err instanceof RequestFailed ? forReaders(err.error, showSetupErrors, 'errors.tryItOutUnavailable') : undefined;
       throw new Error(error?.key ? t(error.key, error.params) : err instanceof Error ? err.message : String(err), { cause: err });
     }
 
@@ -172,7 +174,7 @@ function codeSamplesPlugin(current: { spec: Record<string, unknown>; kind?: Spec
   });
 }
 
-export function ApiDocs({ spec, config, tryItOutAllowed, preview }: ApiDocsProps) {
+export function ApiDocs({ spec, config, tryItOutAllowed, preview, showSetupErrors = Boolean(preview) }: ApiDocsProps) {
   const t = useT();
   // Kept in a ref: changing it must not re-render (and reset) Swagger UI.
   const pastedToken = useRef('');
@@ -192,7 +194,7 @@ export function ApiDocs({ spec, config, tryItOutAllowed, preview }: ApiDocsProps
   const plugins = useMemo(() => (showSamples ? [codeSamplesPlugin(samplesSource.current)] : []), [showSamples]);
 
   const requestInterceptor = useMemo(() => {
-    const userFetch = proxyFetch(t, preview);
+    const userFetch = proxyFetch(t, preview, showSetupErrors);
     return (req: Record<string, unknown>) => {
       const request = req as SwaggerRequest;
       request.userFetch = userFetch as SwaggerRequest['userFetch'];
@@ -203,7 +205,7 @@ export function ApiDocs({ spec, config, tryItOutAllowed, preview }: ApiDocsProps
       }
       return req;
     };
-  }, [t, preview]);
+  }, [t, preview, showSetupErrors]);
 
   const classes = [
     'sp-docs',

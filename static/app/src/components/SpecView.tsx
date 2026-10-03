@@ -13,9 +13,10 @@ interface SpecViewProps {
   config: MacroConfig;
   tryItOutAllowed: boolean;
   preview?: MacroConfig;
+  showSetupErrors?: boolean;
 }
 
-export function SpecView({ kind, spec, config, tryItOutAllowed, preview }: SpecViewProps) {
+export function SpecView({ kind, spec, config, tryItOutAllowed, preview, showSetupErrors }: SpecViewProps) {
   if (isAsyncApi(kind)) {
     return (
       <Suspense fallback={<Loading />}>
@@ -23,5 +24,5 @@ export function SpecView({ kind, spec, config, tryItOutAllowed, preview }: SpecV
       </Suspense>
     );
   }
-  return <ApiDocs spec={spec} config={config} tryItOutAllowed={tryItOutAllowed} preview={preview} />;
+  return <ApiDocs spec={spec} config={config} tryItOutAllowed={tryItOutAllowed} preview={preview} showSetupErrors={showSetupErrors} />;
 }

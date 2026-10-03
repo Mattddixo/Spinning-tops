@@ -99,7 +99,9 @@
     "webhookUnsupported": "Webhooks aren't available for SwaggerHub connections.",
     "hostsNotSynced": "SpecPage doesn't have the approved host lists yet.",
     "hostNotForTryItOut": "{host} isn't on SpecPage's list of approved Try it out hosts.",
-    "hostNotForSpecs": "{host} isn't on SpecPage's list of approved spec hosts."
+    "hostNotForSpecs": "{host} isn't on SpecPage's list of approved spec hosts.",
+    "docsUnavailable": "These API docs aren't available right now.",
+    "tryItOutUnavailable": "Try it out isn't available right now."
   },
   "hints": {
     "askAdminApproveHost": "A Confluence admin can approve this host in SpecPage settings.",
