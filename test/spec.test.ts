@@ -162,3 +162,28 @@ describe('AsyncAPI summaries', () => {
     expect(resolveServers(doc, 'asyncapi-3').spec).toBe(doc);
   });
 });
+
+describe('OpenAPI 3.2 query operations', () => {
+  const spec = (openapi: string) => ({
+    openapi,
+    info: { title: 't', version: '1' },
+    tags: [{ name: 'search' }, { name: 'other' }],
+    paths: {
+      '/search': { query: { tags: ['search'], summary: 'Search with a body', responses: { '200': { description: 'ok' } } } },
+      '/other': { get: { tags: ['other'], responses: { '200': { description: 'ok' } } } },
+    },
+  });
+
+  it('lists query operations in 3.2 only', () => {
+    expect(summarizeSpec(spec('3.2.0'), 'openapi-3.2').operations.map((o) => `${o.method} ${o.path}`)).toEqual(['QUERY /search', 'GET /other']);
+    expect(summarizeSpec(spec('3.1.0'), 'openapi-3.1').operations.map((o) => `${o.method} ${o.path}`)).toEqual(['GET /other']);
+    expect(buildSearchText(summarizeSpec(spec('3.2.0'), 'openapi-3.2'))).toContain('QUERY /search');
+  });
+
+  it('applies tag filters to query operations', () => {
+    const kept = filterSpec(spec('3.2.0'), { includeTags: ['search'] });
+    expect(Object.keys(kept.paths as object)).toEqual(['/search']);
+    const dropped = filterSpec(spec('3.2.0'), { includeTags: ['other'] });
+    expect(Object.keys(dropped.paths as object)).toEqual(['/other']);
+  });
+});

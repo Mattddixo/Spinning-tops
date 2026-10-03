@@ -192,3 +192,16 @@ describe('exampleFor', () => {
     expect(exampleFor({}, { allOf: [{ properties: { a: { type: 'integer' } } }, { properties: { b: { type: 'boolean' } } }] })).toEqual({ a: 0, b: true });
   });
 });
+
+describe('OpenAPI 3.2 query samples', () => {
+  it('writes samples for query operations', () => {
+    const spec: Json = {
+      openapi: '3.2.0',
+      info: { title: 't', version: '1' },
+      servers: [{ url: 'https://api.example.com' }],
+      paths: { '/search': { query: { requestBody: { content: { 'application/json': { schema: { type: 'object', properties: { q: { type: 'string', example: 'pets' } } } } } }, responses: {} } } },
+    };
+    expect(writeSample('curl', buildSampleRequest(spec, 'openapi-3.2', '/search', 'query')!)).toContain("curl -X QUERY 'https://api.example.com/search'");
+    expect(buildSampleRequest({ ...spec, openapi: '3.1.0' }, 'openapi-3.1', '/search', 'query')).toBeUndefined();
+  });
+});

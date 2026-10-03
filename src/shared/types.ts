@@ -298,6 +298,13 @@ export interface AppSettings {
   cacheTtlMinutes: number;
 }
 
+/**
+ * Largest binary Try it out request body, in bytes. Shared by the UI (to fail
+ * early) and the proxy. Forge caps invoke payloads at 500 KB and base64 adds a
+ * third, so binary bodies get a smaller limit than text.
+ */
+export const MAX_BINARY_REQUEST_BYTES = 350_000;
+
 export const DEFAULT_SETTINGS: AppSettings = {
   urlSourcesEnabled: false,
   tryItOutEnabled: false,

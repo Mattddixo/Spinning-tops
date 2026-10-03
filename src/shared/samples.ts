@@ -1,4 +1,4 @@
-import { HTTP_METHODS, deref, isObject, mergedParameters, type Json } from './refs';
+import { deref, operationMethods, isObject, mergedParameters, type Json } from './refs';
 import type { SpecKind } from './types';
 
 // Code samples for one operation, built from the spec: an example request
@@ -211,7 +211,7 @@ export function buildSampleRequest(root: Json, kind: SpecKind, path: string, met
   const paths = isObject(root.paths) ? root.paths : {};
   const item = deref(root, paths[path]);
   const lower = method.toLowerCase();
-  const op = item && (HTTP_METHODS as readonly string[]).includes(lower) ? deref(root, item[lower]) : undefined;
+  const op = item && operationMethods(root).includes(lower) ? deref(root, item[lower]) : undefined;
   if (!item || !op) return undefined;
   const swagger = kind === 'swagger-2.0';
 

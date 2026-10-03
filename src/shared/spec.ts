@@ -1,9 +1,8 @@
 import { parse as parseYaml, YAMLParseError } from 'yaml';
 import { appError } from './messages';
-import { deref } from './refs';
+import { deref, operationMethods } from './refs';
 import type { OperationSummary, Result, SpecKind, SpecSummary } from './types';
 
-const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
 
 type JsonObject = Record<string, unknown>;
 
@@ -164,7 +163,7 @@ export function listOperations(spec: JsonObject): OperationSummary[] {
   const ops: OperationSummary[] = [];
   for (const [path, item] of Object.entries(paths)) {
     if (!isObject(item)) continue;
-    for (const method of HTTP_METHODS) {
+    for (const method of operationMethods(spec)) {
       const op = item[method];
       if (!isObject(op)) continue;
       ops.push({
@@ -225,6 +224,7 @@ export function filterSpec<T extends JsonObject>(spec: T, options: FilterOptions
   if (!tags.length && !prefixes.length && !hideDeprecated) return spec;
 
   const paths = isObject(spec.paths) ? spec.paths : {};
+  const methods = operationMethods(spec);
   const filteredPaths: JsonObject = {};
   const usedTags = new Set<string>();
 
@@ -235,7 +235,7 @@ export function filterSpec<T extends JsonObject>(spec: T, options: FilterOptions
     const nextItem: JsonObject = {};
     let kept = 0;
     for (const [key, value] of Object.entries(item)) {
-      const isOperation = (HTTP_METHODS as readonly string[]).includes(key);
+      const isOperation = methods.includes(key);
       if (!isOperation) {
         nextItem[key] = value;
         continue;
@@ -354,7 +354,7 @@ export function resolveServers(spec: JsonObject, kind: SpecKind, specUrl?: strin
       }
       const nextItem: JsonObject = { ...item };
       if (item.servers) nextItem.servers = fix(item.servers);
-      for (const method of HTTP_METHODS) {
+      for (const method of operationMethods(spec)) {
         const op = item[method];
         if (isObject(op) && op.servers) nextItem[method] = { ...op, servers: fix(op.servers) };
       }
@@ -397,7 +397,7 @@ export function applyServerOverride<T extends JsonObject>(spec: T, kind: SpecKin
       }
       const nextItem: JsonObject = { ...item };
       delete nextItem.servers;
-      for (const method of HTTP_METHODS) {
+      for (const method of operationMethods(spec)) {
         const op = item[method];
         if (isObject(op) && op.servers) {
           const copy = { ...op };

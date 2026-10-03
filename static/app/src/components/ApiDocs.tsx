@@ -4,7 +4,7 @@ import 'swagger-ui-react/swagger-ui.css';
 import '../styles/swagger-theme.css';
 import { appError } from '../../../../src/shared/messages';
 import { applyServerOverride, detectKind, filterSpec } from '../../../../src/shared/spec';
-import type { MacroConfig, ProxyRequest, ProxyResponse, SpecKind } from '../../../../src/shared/types';
+import { MAX_BINARY_REQUEST_BYTES, type MacroConfig, type ProxyRequest, type ProxyResponse, type SpecKind } from '../../../../src/shared/types';
 import { call, invoke, RequestFailed } from '../api';
 import { useT } from '../i18n';
 import type { Translate } from '../../../../src/shared/i18n';
@@ -27,8 +27,6 @@ type SwaggerRequest = {
   userFetch?: (url: string, init: unknown) => Promise<Response>;
 };
 
-// Matches the backend limit in proxy.ts (Forge caps invoke payloads at 500 KB).
-const MAX_BINARY_BODY = 350_000;
 
 type EncodedBody = Pick<ProxyRequest, 'body' | 'bodyBase64'> & { contentType?: string };
 
@@ -55,8 +53,8 @@ async function encodeBody(body: unknown): Promise<EncodedBody> {
   } else {
     return { body: JSON.stringify(body) };
   }
-  if (bytes.byteLength > MAX_BINARY_BODY) {
-    throw new RequestFailed(appError('TOO_LARGE', 'errors.requestTooLarge', { size: MAX_BINARY_BODY / 1000 }));
+  if (bytes.byteLength > MAX_BINARY_REQUEST_BYTES) {
+    throw new RequestFailed(appError('TOO_LARGE', 'errors.requestTooLarge', { size: MAX_BINARY_REQUEST_BYTES / 1000 }));
   }
   return { bodyBase64: bytesToBase64(bytes), contentType };
 }

@@ -6,6 +6,17 @@ export type Json = Record<string, unknown>;
 
 export const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
 
+const OAS32_METHODS: readonly string[] = [...HTTP_METHODS, 'query'];
+
+/**
+ * The path item keys that hold operations: the usual eight, plus `query` in
+ * OpenAPI 3.2. (3.2's `additionalOperations` isn't listed because Swagger UI
+ * doesn't render it, and search, export and comparisons should match what
+ * readers see.)
+ */
+export const operationMethods = (spec: Record<string, unknown>): readonly string[] =>
+  typeof spec.openapi === 'string' && /^3\.2\./.test(spec.openapi) ? OAS32_METHODS : HTTP_METHODS;
+
 const MAX_REF_HOPS = 20;
 
 export const isObject = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);

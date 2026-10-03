@@ -1,4 +1,4 @@
-import { HTTP_METHODS, deref, isObject, mergedParameters, type Json } from './refs';
+import { deref, operationMethods, isObject, mergedParameters, type Json } from './refs';
 import type { QualityCheck, QualityCheckId, QualityReport, SpecKind } from './types';
 
 // Documentation quality checks for OpenAPI and Swagger, in the spirit of the
@@ -102,7 +102,7 @@ export function assessQuality(spec: Json, kind: SpecKind): QualityReport {
   for (const [path, rawItem] of Object.entries(paths)) {
     const item = deref(spec, rawItem);
     if (!item) continue;
-    for (const method of HTTP_METHODS) {
+    for (const method of operationMethods(spec)) {
       const op = item[method];
       if (!isObject(op)) continue;
       const label = `${method.toUpperCase()} ${path}`;

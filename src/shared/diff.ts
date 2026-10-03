@@ -1,4 +1,4 @@
-import { HTTP_METHODS, isObject, mergedParameters, resolveRef, type Json } from './refs';
+import { isObject, operationMethods, mergedParameters, resolveRef, type Json } from './refs';
 import type { ChangeCode, ChangeLevel, SpecChange, SpecDiff, SpecKind } from './types';
 
 // Compare two OpenAPI or Swagger documents and list what changed for API
@@ -353,7 +353,7 @@ function operations(side: Side): Map<string, NormalOperation> {
   for (const [path, rawItem] of Object.entries(paths)) {
     const item = resolveRef(side.root, rawItem).value;
     if (!item) continue;
-    for (const method of HTTP_METHODS) {
+    for (const method of operationMethods(side.root)) {
       const op = item[method];
       if (isObject(op)) out.set(`${method.toUpperCase()} ${templateKey(path)}`, normalise(side, path, item, op));
     }

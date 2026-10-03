@@ -253,3 +253,11 @@ describe('diffSpecs', () => {
     expect(result.truncated).toBe(true);
   });
 });
+
+describe('diffSpecs with OpenAPI 3.2', () => {
+  it('compares query operations', () => {
+    const base: Json = { openapi: '3.2.0', info: { title: 't', version: '1' }, paths: { '/search': { query: { responses: { '200': { description: 'ok' } } } } } };
+    const head: Json = { openapi: '3.2.0', info: { title: 't', version: '2' }, paths: {} };
+    expect(diffSpecs(base, 'openapi-3.2', head, 'openapi-3.2').changes).toEqual([{ level: 'breaking', code: 'operationRemoved', operation: 'QUERY /search' }]);
+  });
+});

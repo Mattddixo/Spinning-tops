@@ -1,4 +1,4 @@
-import type { MacroConfig, ProxyRequest, ProxyResponse } from '../shared/types';
+import { MAX_BINARY_REQUEST_BYTES, type MacroConfig, type ProxyRequest, type ProxyResponse } from '../shared/types';
 import { isLicensedUser, requireLicense, type SecureContext } from './context';
 import { fail } from './errors';
 import { externalFetchAny } from './http';
@@ -8,7 +8,6 @@ import { getSettings } from './store';
 // Front-end invocation requests are capped at 500 KB by Forge. Base64 adds a
 // third, so binary bodies get a smaller limit than text.
 const MAX_TEXT_BODY = 400_000;
-const MAX_BINARY_BODY = 350_000;
 const MAX_TEXT_RESPONSE = 4_000_000;
 // Responses are capped at 5 MB; base64 of 3 MB is 4 MB.
 const MAX_BINARY_RESPONSE = 3_000_000;
@@ -37,9 +36,9 @@ const BLOCKED_RESPONSE_HEADERS = new Set(['set-cookie', 'set-cookie2']);
 
 function decodeBinaryBody(b64: string): ArrayBuffer {
   // Rough size check before decoding so a huge string can't eat memory.
-  if (b64.length > Math.ceil((MAX_BINARY_BODY * 4) / 3) + 4) fail('TOO_LARGE', 'errors.requestTooLarge', { size: MAX_BINARY_BODY / 1000 });
+  if (b64.length > Math.ceil((MAX_BINARY_REQUEST_BYTES * 4) / 3) + 4) fail('TOO_LARGE', 'errors.requestTooLarge', { size: MAX_BINARY_REQUEST_BYTES / 1000 });
   const bytes = Buffer.from(b64, 'base64');
-  if (bytes.length > MAX_BINARY_BODY) fail('TOO_LARGE', 'errors.requestTooLarge', { size: MAX_BINARY_BODY / 1000 });
+  if (bytes.length > MAX_BINARY_REQUEST_BYTES) fail('TOO_LARGE', 'errors.requestTooLarge', { size: MAX_BINARY_REQUEST_BYTES / 1000 });
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
