@@ -6,8 +6,8 @@ import { isLicensedUser, type SecureContext } from './context';
 import { fail } from './errors';
 import { listByPrefix } from './store';
 
-// A small registry of the API docs on each page, so a space can list its APIs
-// (and, later, the whole site). Each macro instance writes one entry when it
+// A small registry of the API docs on each page, so a space (or the whole
+// site) can list its APIs. Each macro instance writes one entry when it
 // loads: api:{spaceId}:{contentId}:{localId}. Listing checks every page
 // against the reader's own permissions and drops entries whose page or macro
 // is gone.
@@ -16,6 +16,8 @@ const PREFIX = 'api';
 // Rewrite entries at most this often when nothing changed (keeps writes down on busy pages).
 const REFRESH_MS = 12 * 60 * 60 * 1000;
 const MAX_ENTRIES = 1000;
+// The site-wide list reads more entries; each 250 costs up to two page lookups.
+const MAX_SITE_ENTRIES = 2000;
 const PAGE_BATCH = 250;
 
 const keyPart = (value: string) => value.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120);
@@ -34,6 +36,7 @@ export async function recordApi(ctx: SecureContext, config: MacroConfig, summary
   const key = entryKey(ctx.spaceId, ctx.contentId, ctx.localId);
   const entry: ApiEntry = {
     spaceId: ctx.spaceId,
+    ...(ctx.spaceKey ? { spaceKey: ctx.spaceKey.slice(0, 255) } : {}),
     contentId: ctx.contentId,
     contentType: ctx.contentType,
     localId: ctx.localId,
@@ -50,7 +53,7 @@ export async function recordApi(ctx: SecureContext, config: MacroConfig, summary
     const existing = await kvs.get<ApiEntry>(key);
     const same =
       existing &&
-      (['title', 'version', 'kind', 'operationCount', 'sourceType', 'sourceLabel', 'fingerprint'] as const).every((k) => existing[k] === entry[k]);
+      (['spaceKey', 'title', 'version', 'kind', 'operationCount', 'sourceType', 'sourceLabel', 'fingerprint'] as const).every((k) => existing[k] === entry[k]);
     if (same && Date.now() - Date.parse(existing.updatedAt) < REFRESH_MS) return;
     await kvs.set(key, entry);
   } catch (err) {
@@ -94,13 +97,12 @@ const MACRO_KEY = 'specpage-viewer';
  */
 export const pageHasMacro = (adf: string | undefined) => adf === undefined || adf.includes(MACRO_KEY);
 
-export async function listSpaceApis(ctx: SecureContext, spaceId: string): Promise<ApiListItem[]> {
-  // Page permissions are checked as the reader, which needs a licensed user.
-  if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'errors.catalogLicensedOnly');
-  if (!/^\d+$/.test(spaceId)) fail('BAD_REQUEST', 'errors.generic');
-  const entries = await listByPrefix<ApiEntry>(`${PREFIX}:${keyPart(spaceId)}:`, MAX_ENTRIES);
-  if (!entries.length) return [];
-
+/**
+ * Keep the entries whose page the reader can see and that still has a
+ * SpecPage macro. Entries for deleted pages, or pages with no macro left, are
+ * removed; restricted pages are kept for the readers who can see them.
+ */
+async function visibleEntries(entries: Array<{ key: string; value: ApiEntry }>): Promise<ApiListItem[]> {
   const stale: string[] = [];
   const items: ApiListItem[] = [];
   for (const type of ['page', 'blogpost'] as const) {
@@ -126,4 +128,21 @@ export async function listSpaceApis(ctx: SecureContext, spaceId: string): Promis
   }
   await Promise.all(stale.map((key) => kvs.delete(key).catch(() => undefined)));
   return items.sort((a, b) => a.title.localeCompare(b.title) || a.pageTitle.localeCompare(b.pageTitle));
+}
+
+export async function listSpaceApis(ctx: SecureContext, spaceId: string): Promise<ApiListItem[]> {
+  // Page permissions are checked as the reader, which needs a licensed user.
+  if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'errors.catalogLicensedOnly');
+  if (!/^\d+$/.test(spaceId)) fail('BAD_REQUEST', 'errors.generic');
+  const entries = await listByPrefix<ApiEntry>(`${PREFIX}:${keyPart(spaceId)}:`, MAX_ENTRIES);
+  return entries.length ? visibleEntries(entries) : [];
+}
+
+/** Every API on the site the reader can see. `truncated` when there were more entries than one call can check. */
+export async function listSiteApis(ctx: SecureContext): Promise<{ apis: ApiListItem[]; truncated: boolean }> {
+  if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'errors.catalogLicensedOnly');
+  // One more than the cap tells us whether anything was left out.
+  const entries = await listByPrefix<ApiEntry>(`${PREFIX}:`, MAX_SITE_ENTRIES + 1);
+  const truncated = entries.length > MAX_SITE_ENTRIES;
+  return { apis: entries.length ? await visibleEntries(entries.slice(0, MAX_SITE_ENTRIES)) : [], truncated };
 }

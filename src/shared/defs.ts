@@ -33,6 +33,8 @@ export type Defs = {
 
   /** APIs documented in a space, filtered to pages the reader can see (space page module). */
   listSpaceApis: () => Result<{ spaceKey?: string; apis: ApiListItem[] }>;
+  /** APIs across the whole site, filtered to pages the reader can see (global page module). */
+  listSiteApis: () => Result<{ apis: ApiListItem[]; truncated: boolean }>;
 
   adminGetState: () => Result<{ settings: AppSettings; connections: GitConnection[] }>;
   adminSaveSettings: (args: { settings: AppSettings }) => Result<AppSettings>;

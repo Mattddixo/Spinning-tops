@@ -391,14 +391,19 @@
       "title": "API docs in this space",
       "intro": "Every page in this space with an OpenAPI, Swagger or AsyncAPI macro. Pages you can't view aren't listed.",
       "empty": "No API docs in this space yet. Add the \"OpenAPI / Swagger docs\" macro to a page and they'll appear here once the page has been viewed.",
-      "search": "Filter by API, page or source",
+      "search": "Filter by API, page, space or source",
       "count": "Showing {shown} of {total}",
       "colApi": "API",
       "colType": "Type",
       "colOperations": "Operations",
       "colPage": "Page",
       "colSource": "Source",
-      "seen": "updated {when}"
+      "seen": "updated {when}",
+      "siteTitle": "API catalog",
+      "siteIntro": "Every page on this site with an OpenAPI, Swagger or AsyncAPI macro. Pages you can't view aren't listed.",
+      "siteEmpty": "No API docs yet. Add the \"OpenAPI / Swagger docs\" macro to a page and it'll appear here once the page has been viewed.",
+      "colSpace": "Space",
+      "truncated": "This site has more API pages than can be checked at once, so some may be missing. Each space's API docs page lists all of its own."
     },
     "audit": {
       "settings": {

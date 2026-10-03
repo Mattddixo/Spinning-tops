@@ -1060,3 +1060,38 @@ describe('azureRepoFromUrl', () => {
     expect(azureRepoFromUrl('not a url')).toBeUndefined();
   });
 });
+
+describe('site-wide API catalog', () => {
+  const globalPage = { type: 'confluence:globalPage', content: undefined, space: undefined };
+  const entry = (spaceId: string, contentId: string, title: string, spaceKey?: string) => ({
+    spaceId, ...(spaceKey ? { spaceKey } : {}), contentId, contentType: 'page', localId: `m-${contentId}`, title, version: '1', kind: 'openapi-3.0',
+    operationCount: 1, sourceType: 'attachment', sourceLabel: 'openapi.yaml', fingerprint: 'f', updatedAt: new Date().toISOString(),
+  });
+  const adf = JSON.stringify({ type: 'doc', content: [{ type: 'extension', attrs: { extensionKey: 'a/b/static/specpage-viewer' } }] });
+
+  it('lists APIs from every space the reader can see', async () => {
+    await h.memory.kvs.set('api:777:301:m-301', entry('777', '301', 'Payments', 'ENG'));
+    await h.memory.kvs.set('api:888:302:m-302', entry('888', '302', 'Accounts', 'OPS'));
+    await h.memory.kvs.set('api:999:303:m-303', entry('999', '303', 'Hidden', 'HR'));
+    h.userConfluence.mockImplementation(async () =>
+      response(200, { results: [{ id: '301', title: 'Pay page', body: { atlas_doc_format: { value: adf } } }, { id: '302', title: 'Acct page', body: { atlas_doc_format: { value: adf } } }] }),
+    );
+    h.appConfluence.mockImplementation(async () => response(200, { results: [{ id: '303', title: 'HR only' }] }));
+    const res = await call('listSiteApis', {}, { extension: globalPage });
+    expect(res.ok).toBe(true);
+    expect(res.value.truncated).toBe(false);
+    expect(res.value.apis.map((a: { title: string; spaceKey: string }) => `${a.title} (${a.spaceKey})`)).toEqual(['Accounts (OPS)', 'Payments (ENG)']);
+    // Restricted from this reader, but not deleted, so kept for others.
+    expect(await h.memory.kvs.get('api:999:303:m-303')).toBeDefined();
+  });
+
+  it('records the space key with each entry', async () => {
+    await call('loadSpec', {}, { extension: { config: { sourceType: 'inline', inlineSpec: SIMPLE_YAML } } });
+    expect(((await h.memory.kvs.get('api:777:123:macro-1')) as Record<string, unknown>).spaceKey).toBe('ENG');
+  });
+
+  it('needs a licensed user', async () => {
+    expect((await call('listSiteApis', {}, { account: 'unlicensed', extension: globalPage })).error?.key).toBe('errors.catalogLicensedOnly');
+    expect(h.userConfluence).not.toHaveBeenCalled();
+  });
+});

@@ -364,6 +364,8 @@ export interface AuditEntryView extends AuditEntry {
 /** One API doc macro, as stored in the space registry (backend/catalog.ts). */
 export interface ApiEntry {
   spaceId: string;
+  /** Recorded since the site-wide catalog was added; older entries fill it in when their page is next viewed. */
+  spaceKey?: string;
   contentId: string;
   contentType: 'page' | 'blogpost';
   localId: string;

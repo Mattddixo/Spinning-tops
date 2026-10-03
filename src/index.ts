@@ -7,7 +7,7 @@ import { requireAdmin } from './backend/auth';
 import { INVOCATION_BUDGET_MS, withBudget } from './backend/budget';
 import { effectiveConfig, isLicensedUser, readContext, requireLicense } from './backend/context';
 import { asResult, fail } from './backend/errors';
-import { listSpaceApis, recordApi } from './backend/catalog';
+import { listSiteApis, listSpaceApis, recordApi } from './backend/catalog';
 import { compareSpec } from './backend/compare';
 import { exportMacro } from './backend/export';
 import { loadSpec } from './backend/loadSpec';
@@ -48,6 +48,13 @@ export const handler = makeResolver<Defs>({
       requireLicense(ctx);
       if (!ctx.spaceId) fail('BAD_REQUEST', 'errors.catalogNeedsSpace');
       return { spaceKey: ctx.spaceKey, apis: await listSpaceApis(ctx, ctx.spaceId as string) };
+    }),
+
+  listSiteApis: ({ context }) =>
+    run('listSiteApis', async () => {
+      const ctx = readContext(context);
+      requireLicense(ctx);
+      return listSiteApis(ctx);
     }),
 
   listAttachments: ({ context }) => run('listAttachments', () => listSpecAttachments(readContext(context))),

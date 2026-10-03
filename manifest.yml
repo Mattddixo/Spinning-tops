@@ -114,6 +114,13 @@ modules:
       function: webhook
       response:
         type: dynamic
+  confluence:globalPage:
+    - key: specpage-api-catalog
+      resource: ui/space
+      resolver:
+        function: resolver
+      title: API catalog
+      route: api-catalog
   function:
     - key: resolver
       handler: index.handler

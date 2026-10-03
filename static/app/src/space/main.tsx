@@ -1,14 +1,16 @@
-import { router } from '@forge/bridge';
+import { router, view } from '@forge/bridge';
 import { useEffect, useMemo, useState } from 'react';
 import type { ApiListItem, AppError } from '../../../../src/shared/types';
 import { call, invoke, toAppError } from '../api';
 import { mount } from '../bootstrap';
-import { ErrorMessage, Loading } from '../components/ui';
+import { ErrorMessage, Loading, Message } from '../components/ui';
 import { KIND_LABELS, relativeTime } from '../format';
 import { useI18n } from '../i18n';
 import '../styles/space.css';
 
-type State = { status: 'loading' } | { status: 'error'; error: AppError } | { status: 'ready'; apis: ApiListItem[] };
+type State = { status: 'loading' } | { status: 'error'; error: AppError } | { status: 'ready'; apis: ApiListItem[]; truncated: boolean; site: boolean };
+
+const SITE_MODULE_KEY = 'specpage-api-catalog';
 
 const SOURCE_KEYS: Record<ApiListItem['sourceType'], string> = {
   attachment: 'ui.config.sourceAttachment',
@@ -23,7 +25,7 @@ const pageUrl = (contentId: string) => `/wiki/pages/viewpage.action?pageId=${enc
 function matches(api: ApiListItem, query: string) {
   if (!query) return true;
   const q = query.toLowerCase();
-  return [api.title, api.pageTitle, api.sourceLabel, api.version].some((v) => v?.toLowerCase().includes(q));
+  return [api.title, api.pageTitle, api.sourceLabel, api.version, api.spaceKey].some((v) => v?.toLowerCase().includes(q));
 }
 
 function SpaceApis() {
@@ -32,8 +34,19 @@ function SpaceApis() {
   const [query, setQuery] = useState('');
 
   useEffect(() => {
-    call(invoke('listSpaceApis'))
-      .then(({ apis }) => setState({ status: 'ready', apis }))
+    // One UI for both the space page and the site-wide catalog (Apps menu).
+    const load = async () => {
+      const ctx = await view.getContext().catch(() => undefined);
+      const site = ctx?.moduleKey === SITE_MODULE_KEY || ctx?.extension?.type === 'confluence:globalPage';
+      if (site) {
+        const { apis, truncated } = await call(invoke('listSiteApis'));
+        return { apis, truncated, site };
+      }
+      const { apis } = await call(invoke('listSpaceApis'));
+      return { apis, truncated: false, site };
+    };
+    load()
+      .then((result) => setState({ status: 'ready', ...result }))
       .catch((err) => setState({ status: 'error', error: toAppError(err) }));
   }, []);
 
@@ -51,11 +64,12 @@ function SpaceApis() {
   return (
     <main className="sp-space sp-stack">
       <header className="sp-stack-tight">
-        <h1>{t('ui.space.title')}</h1>
-        <p className="sp-muted">{t('ui.space.intro')}</p>
+        <h1>{state.site ? t('ui.space.siteTitle') : t('ui.space.title')}</h1>
+        <p className="sp-muted">{state.site ? t('ui.space.siteIntro') : t('ui.space.intro')}</p>
       </header>
+      {state.truncated ? <Message appearance="warning">{t('ui.space.truncated')}</Message> : null}
       {state.apis.length === 0 ? (
-        <p className="sp-help">{t('ui.space.empty')}</p>
+        <p className="sp-help">{state.site ? t('ui.space.siteEmpty') : t('ui.space.empty')}</p>
       ) : (
         <>
           <input
@@ -75,6 +89,7 @@ function SpaceApis() {
                 <th scope="col">{t('ui.space.colApi')}</th>
                 <th scope="col">{t('ui.space.colType')}</th>
                 <th scope="col">{t('ui.space.colOperations')}</th>
+                {state.site ? <th scope="col">{t('ui.space.colSpace')}</th> : null}
                 <th scope="col">{t('ui.space.colPage')}</th>
                 <th scope="col">{t('ui.space.colSource')}</th>
               </tr>
@@ -90,6 +105,7 @@ function SpaceApis() {
                   </td>
                   <td>{KIND_LABELS[api.kind] ?? api.kind}</td>
                   <td>{api.operationCount}</td>
+                  {state.site ? <td>{api.spaceKey ?? '–'}</td> : null}
                   <td>{api.pageTitle}</td>
                   <td>
                     <div>{t(SOURCE_KEYS[api.sourceType])}</div>

@@ -248,7 +248,7 @@ test('the space page lists API docs and filters them', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'API docs in this space' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Billing API' })).toBeVisible();
   await expect(page.getByText('AsyncAPI 3')).toBeVisible();
-  await page.getByRole('searchbox', { name: 'Filter by API, page or source' }).fill('events');
+  await page.getByRole('searchbox', { name: 'Filter by API, page, space or source' }).fill('events');
   await expect(page.getByText('Showing 1 of 2')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Billing API' })).toHaveCount(0);
   expect(await cspViolations(page)).toEqual([]);
@@ -381,6 +381,31 @@ test('admins can turn on a push webhook and see the secret once', async ({ page 
   await page.getByRole('button', { name: 'Turn off' }).click();
   await expect(page.getByLabel('Secret')).toHaveCount(0);
   await expect(page.getByText('Webhook on')).toHaveCount(0);
+  expect(await cspViolations(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('the site-wide catalog lists APIs from every space', async ({ page }) => {
+  const errors = await installHarness(page, { extension: { type: 'confluence:globalPage' } });
+  await page.addInitScript(() => {
+    const h = (window as unknown as { __SPECPAGE_HARNESS__: Harness & { context: Record<string, unknown> } }).__SPECPAGE_HARNESS__;
+    h.context.moduleKey = 'specpage-api-catalog';
+    const api = (contentId: string, title: string, spaceKey: string) => ({
+      spaceId: contentId, spaceKey, contentId, contentType: 'page', localId: `m${contentId}`, title, pageTitle: `${title} page`, version: '1.0', kind: 'openapi-3.0',
+      operationCount: 4, sourceType: 'git', sourceLabel: 'acme/x@main: openapi.yaml', fingerprint: 'f', updatedAt: new Date().toISOString(),
+    });
+    h.resolvers.listSiteApis = () => ({ ok: true, value: { truncated: true, apis: [api('1', 'Billing API', 'ENG'), api('2', 'People API', 'HR')] } });
+  });
+  await page.goto('/space.html');
+  await expect(page.getByRole('heading', { name: 'API catalog' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Space' })).toBeVisible();
+  await expect(page.getByText('more API pages than can be checked')).toBeVisible();
+  await page.getByRole('searchbox', { name: 'Filter by API, page, space or source' }).fill('hr');
+  await expect(page.getByText('Showing 1 of 2')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'People API' })).toBeVisible();
+  const calls = await page.evaluate(() => (window as unknown as { __SPECPAGE_CALLS__: Array<{ fn: string }> }).__SPECPAGE_CALLS__.map((c) => c.fn));
+  expect(calls).toContain('listSiteApis');
+  expect(calls).not.toContain('listSpaceApis');
   expect(await cspViolations(page)).toEqual([]);
   expect(errors).toEqual([]);
 });
