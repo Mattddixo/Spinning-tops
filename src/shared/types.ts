@@ -34,6 +34,8 @@ export interface MacroConfig {
   showServers?: boolean;
   showFilter?: boolean;
   tryItOut?: boolean;
+  /** Code samples in each operation (default on). */
+  showCodeSamples?: boolean;
   /** Maximum height in pixels; 0 means grow with content. */
   maxHeight?: number;
   /** Replaces the spec's servers, e.g. to point "Try it out" at staging. */

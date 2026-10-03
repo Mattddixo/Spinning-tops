@@ -74,7 +74,7 @@ function cleanConfig(config: MacroConfig): MacroConfig {
   keep('serverUrl', config.serverUrl?.trim());
   keep('includeTags', config.includeTags);
   keep('includePaths', config.includePaths);
-  for (const key of ['hideDeprecated', 'showModels', 'showInfo', 'showServers', 'showFilter', 'tryItOut'] as const) {
+  for (const key of ['hideDeprecated', 'showModels', 'showInfo', 'showServers', 'showFilter', 'showCodeSamples', 'tryItOut'] as const) {
     if (typeof config[key] === 'boolean') out[key] = config[key];
   }
   keep('docExpansion', config.docExpansion);
@@ -538,6 +538,7 @@ function ConfigApp() {
             <Toggle label={t('ui.config.showServers')} checked={config.showServers !== false} onChange={(v) => update({ showServers: v })} />
             <Toggle label={t('ui.config.showModels')} checked={config.showModels !== false} onChange={(v) => update({ showModels: v })} />
             <Toggle label={t('ui.config.showFilter')} checked={config.showFilter === true} onChange={(v) => update({ showFilter: v })} />
+            <Toggle label={t('ui.config.showCodeSamples')} checked={config.showCodeSamples !== false} onChange={(v) => update({ showCodeSamples: v })} help={t('ui.config.showCodeSamplesHelp')} />
             <Toggle label={t('ui.config.hideDeprecated')} checked={config.hideDeprecated === true} onChange={(v) => update({ hideDeprecated: v })} />
             <Toggle
               label={t('ui.config.tryItOut')}

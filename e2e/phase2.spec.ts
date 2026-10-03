@@ -336,3 +336,35 @@ test('the Quality tab scores the docs readers will see', async ({ page }) => {
   expect(errors).toEqual([]);
   await page.screenshot({ path: 'test-results/quality.png', fullPage: true });
 });
+
+test('each operation shows code samples in several languages', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const errors = await installHarness(page, {});
+  await page.goto('/macro.html');
+  await page.locator('.opblock-summary', { hasText: 'Create payment' }).click();
+  const samples = page.locator('.sp-samples').first();
+  await expect(samples.getByRole('tab', { name: 'cURL' })).toHaveAttribute('aria-selected', 'true');
+  await expect(samples.locator('code')).toContainText("curl -X POST 'https://api.example.com/v1/payments'");
+  await expect(samples.locator('code')).toContainText('"amount": 0');
+
+  // The chosen language carries over to other operations.
+  await samples.getByRole('tab', { name: 'Python' }).click();
+  await expect(samples.locator('code')).toContainText('requests.request("POST"');
+  await page.locator('.opblock-summary', { hasText: 'List payments' }).click();
+  await expect(page.locator('.sp-samples').nth(1).getByRole('tab', { name: 'Python' })).toHaveAttribute('aria-selected', 'true');
+
+  await samples.getByRole('button', { name: 'Copy' }).click();
+  await expect(samples.getByRole('button', { name: 'Copied' })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('import requests');
+  expect(await cspViolations(page)).toEqual([]);
+  expect(errors).toEqual([]);
+  await page.screenshot({ path: 'test-results/samples.png', fullPage: true });
+});
+
+test('code samples can be turned off per macro', async ({ page }) => {
+  await installHarness(page, { config: { showCodeSamples: false } });
+  await page.goto('/macro.html');
+  await page.locator('.opblock-summary', { hasText: 'Create payment' }).click();
+  await expect(page.locator('.opblock-section-header', { hasText: 'Responses' }).first()).toBeVisible();
+  await expect(page.locator('.sp-samples')).toHaveCount(0);
+});

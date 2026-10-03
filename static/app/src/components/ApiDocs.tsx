@@ -1,14 +1,15 @@
-import { useId, useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState, type ComponentType } from 'react';
 import SwaggerUI from 'swagger-ui-react';
 import 'swagger-ui-react/swagger-ui.css';
 import '../styles/swagger-theme.css';
 import { appError } from '../../../../src/shared/messages';
 import { applyServerOverride, detectKind, filterSpec } from '../../../../src/shared/spec';
-import type { MacroConfig, ProxyRequest, ProxyResponse } from '../../../../src/shared/types';
+import type { MacroConfig, ProxyRequest, ProxyResponse, SpecKind } from '../../../../src/shared/types';
 import { call, invoke, RequestFailed } from '../api';
 import { useT } from '../i18n';
 import type { Translate } from '../../../../src/shared/i18n';
 import { base64ToBytes, bytesToBase64 } from '../spec-transport';
+import { CodeSamples } from './CodeSamples';
 
 interface ApiDocsProps {
   spec: Record<string, unknown>;
@@ -150,6 +151,29 @@ function TokenBar({ onChange }: { onChange: (token: string) => void }) {
   );
 }
 
+// Swagger UI plugin that shows code samples in each expanded operation, just
+// above its responses. Swagger UI passes the operation's path and method to
+// its "responses" component; the samples are built from our own copy of the
+// spec, read through a ref so the plugin itself never changes.
+function codeSamplesPlugin(current: { spec: Record<string, unknown>; kind?: SpecKind }) {
+  return () => ({
+    wrapComponents: {
+      responses: (Original: ComponentType<Record<string, unknown>>) =>
+        function ResponsesWithSamples(props: Record<string, unknown>) {
+          const { path, method } = props;
+          return (
+            <>
+              {current.kind && typeof path === 'string' && typeof method === 'string' ? (
+                <CodeSamples spec={current.spec} kind={current.kind} path={path} method={method} />
+              ) : null}
+              <Original {...props} />
+            </>
+          );
+        },
+    },
+  });
+}
+
 export function ApiDocs({ spec, config, tryItOutAllowed, preview }: ApiDocsProps) {
   const t = useT();
   // Kept in a ref: changing it must not re-render (and reset) Swagger UI.
@@ -162,6 +186,12 @@ export function ApiDocs({ spec, config, tryItOutAllowed, preview }: ApiDocsProps
     const kind = detectKind(filtered);
     return kind ? applyServerOverride(filtered, kind, serverUrl) : filtered;
   }, [spec, config.includeTags, config.includePaths, config.hideDeprecated, config.serverUrl]);
+
+  const samplesSource = useRef<{ spec: Record<string, unknown>; kind?: SpecKind }>({ spec: prepared });
+  samplesSource.current.spec = prepared;
+  samplesSource.current.kind = detectKind(prepared);
+  const showSamples = config.showCodeSamples !== false;
+  const plugins = useMemo(() => (showSamples ? [codeSamplesPlugin(samplesSource.current)] : []), [showSamples]);
 
   const requestInterceptor = useMemo(() => {
     const userFetch = proxyFetch(t, preview);
@@ -190,6 +220,9 @@ export function ApiDocs({ spec, config, tryItOutAllowed, preview }: ApiDocsProps
     <div className={classes}>
       {needsTokenBar ? <TokenBar onChange={(token) => (pastedToken.current = token)} /> : null}
       <SwaggerUI
+        // Plugins are only read when Swagger UI starts, so remount when samples are toggled.
+        key={showSamples ? 'samples' : 'plain'}
+        plugins={plugins}
         spec={prepared}
         docExpansion={config.docExpansion ?? 'list'}
         defaultModelsExpandDepth={config.showModels === false ? -1 : 1}

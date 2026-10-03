@@ -236,6 +236,8 @@
       "showServers": "Show servers and authorization bar",
       "showModels": "Show schemas section",
       "showFilter": "Show operation search box",
+      "showCodeSamples": "Show code samples",
+      "showCodeSamplesHelp": "cURL, JavaScript, Python, Go, Java and C# for each endpoint, plus any samples in the spec (x-codeSamples).",
       "hideDeprecated": "Hide deprecated operations",
       "tryItOut": "Enable \"Try it out\"",
       "tryItOutHelp": "Signed-in users can send requests to admin-approved API hosts. SpecPage relays the requests.",
@@ -444,6 +446,12 @@
       "duplicateIds": "These operation IDs are used more than once, which breaks code generators and links: {ids}",
       "notAvailable": "The quality report is available for OpenAPI and Swagger specs.",
       "waiting": "Choose a source to see the report."
+    },
+    "samples": {
+      "title": "Code samples",
+      "copy": "Copy",
+      "copied": "Copied",
+      "generated": "Generated from the spec. Replace the placeholders in angle brackets."
     }
   },
   "changes": {
