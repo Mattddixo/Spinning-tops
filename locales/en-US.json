@@ -430,7 +430,7 @@
       "truncated": "[Response truncated by SpecPage at 4 MB]",
       "tokenLabel": "OAuth access token (optional)",
       "tokenPlaceholder": "Paste an access token",
-      "tokenHelp": "Sign-in pop-ups (authorization code, implicit, OpenID Connect) can't open inside Confluence. Get a token from your identity provider and paste it here; it's sent as a Bearer header on requests that don't already have one, and it's forgotten when you leave the page. Client credentials and password flows work from the Authorize button."
+      "tokenHelp": "Sign-in pop-ups (authorization code, implicit, OpenID Connect) can't open inside Confluence, so paste a token from your identity provider here instead. It's added as a Bearer header to requests that don't already have one. It stays in this page's memory only: never saved or logged, and forgotten when you leave. Like all Try it out requests, it goes through SpecPage's backend and only to hosts your admin has approved. Client credentials and password flows work from the Authorize button."
     },
     "changes": {
       "button": "Changes",
