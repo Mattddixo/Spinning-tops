@@ -1,40 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { originOf, PROVIDERS, usesFilePath } from '../../../../src/shared/git';
-import type { Translate } from '../../../../src/shared/i18n';
+import { hostCovered, originOf, PROVIDERS, usesFilePath } from '../../../../src/shared/git';
 import type { AppError, AppSettings, AuditEntryView, GitAuthType, GitConnection, GitConnectionInput, GitProvider } from '../../../../src/shared/types';
 import { call, invoke, toAppError } from '../api';
 import { mount } from '../bootstrap';
 import { Button, ErrorMessage, Field, Loading, Message, splitList, Toggle } from '../components/ui';
 import { formatDate } from '../format';
-import { errorText, useI18n, useT } from '../i18n';
+import { useI18n, useT } from '../i18n';
 import '../styles/admin.css';
-import { approveHosts, getApprovedHosts, GROUP_INFO, HostLimitError, MAX_DOMAINS_PER_GROUP, normaliseHost, removeHost, type EgressGroup } from './egress';
-
-// Values are translation keys.
-const AUTH_OPTIONS: Record<GitProvider, Array<{ id: GitAuthType; label: string }>> = {
-  github: [
-    { id: 'bearer', label: 'ui.admin.authBearerGithub' },
-    { id: 'none', label: 'ui.admin.authNone' },
-  ],
-  gitlab: [
-    { id: 'private-token', label: 'ui.admin.authPrivateToken' },
-    { id: 'bearer', label: 'ui.admin.authBearerGitlab' },
-    { id: 'none', label: 'ui.admin.authNone' },
-  ],
-  bitbucket: [
-    { id: 'bearer', label: 'ui.admin.authBearerBitbucket' },
-    { id: 'basic', label: 'ui.admin.authBasicBitbucket' },
-    { id: 'none', label: 'ui.admin.authNone' },
-  ],
-  azure: [
-    { id: 'pat', label: 'ui.admin.authPat' },
-    { id: 'none', label: 'ui.admin.authNone' },
-  ],
-  swaggerhub: [
-    { id: 'bearer', label: 'ui.admin.authSwaggerhubKey' },
-    { id: 'none', label: 'ui.admin.authNonePublicApis' },
-  ],
-};
+import { AUTH_OPTIONS, describeAudit, emptyDraft, errorString, hostErrorString, toDraft, type Draft } from './logic';
+import { approveHosts, getApprovedHosts, GROUP_INFO, MAX_DOMAINS_PER_GROUP, normaliseHost, removeHost, type EgressGroup } from './egress';
 
 const API_URL_HELP: Partial<Record<GitProvider, string>> = {
   github: 'ui.admin.apiUrlGithubHelp',
@@ -44,52 +18,7 @@ const API_URL_HELP: Partial<Record<GitProvider, string>> = {
 
 const CACHE_OPTIONS = [0, 5, 10, 30, 60, 360, 1440];
 
-type Draft = Omit<GitConnectionInput, 'repos' | 'spaceKeys'> & { repos: string; spaceKeys: string };
 type Status = { kind: 'success' | 'warning' | 'error'; text: string };
-
-const emptyDraft = (provider: GitProvider = 'github'): Draft => ({
-  name: '',
-  provider,
-  apiBaseUrl: PROVIDERS[provider].apiBaseUrl,
-  webBaseUrl: PROVIDERS[provider].webBaseUrl,
-  authType: AUTH_OPTIONS[provider][0].id,
-  username: '',
-  repos: '',
-  spaceKeys: '',
-  defaultRef: '',
-  token: '',
-});
-
-const toDraft = (c: GitConnection): Draft => ({
-  id: c.id,
-  name: c.name,
-  provider: c.provider,
-  apiBaseUrl: c.apiBaseUrl,
-  webBaseUrl: c.webBaseUrl,
-  authType: c.authType,
-  username: c.username ?? '',
-  repos: c.repos.join('\n'),
-  spaceKeys: c.spaceKeys.join(', '),
-  defaultRef: c.defaultRef ?? '',
-  token: undefined,
-});
-
-function hostApproved(origin: string | undefined, hosts: string[]): boolean {
-  if (!origin) return false;
-  const host = new URL(origin).hostname;
-  return hosts.some((h) => h === origin || h === '*' || (h.startsWith('*.') && host.endsWith(h.slice(1))));
-}
-
-const errorString = (t: Translate, err: unknown) => {
-  const { title, hint } = errorText(t, toAppError(err));
-  return hint ? `${title} ${hint}` : title;
-};
-
-function hostErrorString(t: Translate, err: unknown, fallbackKey: string) {
-  if (err instanceof HostLimitError) return t('ui.admin.hostLimit', { max: MAX_DOMAINS_PER_GROUP });
-  // Bridge errors from the consent flow are plain Errors without a key.
-  return err instanceof Error && err.message ? `${t(fallbackKey)} ${err.message}` : t(fallbackKey);
-}
 
 // Host approvals go through Atlassian's consent dialog in the browser, so the
 // backend never sees them. Report them so they show up in the activity log.
@@ -512,19 +441,6 @@ function WebhookPanel({ connection, onChange }: { connection: GitConnection; onC
   );
 }
 
-function describeAudit(t: Translate, entry: AuditEntryView): string {
-  const action = t(`ui.audit.${entry.action}`);
-  let details = entry.target ?? '';
-  if (entry.action === 'host.approve' || entry.action === 'host.remove') {
-    // changes holds the egress group for host entries.
-    const group = entry.changes?.[0] as EgressGroup | undefined;
-    if (group && GROUP_INFO[group]) details = `${details} (${t(GROUP_INFO[group].title)})`;
-  } else if (entry.changes?.length) {
-    details = details ? `${details}: ${entry.changes.join(', ')}` : entry.changes.join(', ');
-  }
-  return details ? `${action}: ${details}` : action;
-}
-
 function Activity({ refreshKey }: { refreshKey: number }) {
   const { t, locale } = useI18n();
   const [entries, setEntries] = useState<AuditEntryView[]>();
@@ -633,7 +549,7 @@ function AdminApp() {
     setDraft(undefined);
     changed();
     const origin = originOf(saved.apiBaseUrl);
-    if (origin && hosts && !hostApproved(origin, hosts.git)) {
+    if (origin && hosts && !hostCovered(origin, hosts.git)) {
       try {
         const ok = await approveGitHost(origin);
         setNotice(
@@ -715,7 +631,7 @@ function AdminApp() {
             <tbody>
               {state.connections.map((c) => {
                 const origin = originOf(c.apiBaseUrl);
-                const approved = hostApproved(origin, hosts.git);
+                const approved = Boolean(origin) && hostCovered(origin as string, hosts.git);
                 return (
                   <tr key={c.id}>
                     <td>

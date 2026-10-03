@@ -1,13 +1,11 @@
 import { parse as parseYaml, YAMLParseError } from 'yaml';
 import { appError } from './messages';
-import { deref, operationMethods } from './refs';
+import { deref, isObject, operationMethods } from './refs';
 import type { OperationSummary, Result, SpecKind, SpecSummary } from './types';
 
 
 type JsonObject = Record<string, unknown>;
 
-const isObject = (value: unknown): value is JsonObject =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 // JSON or YAML. Alias count is capped (billion laughs).
 export function parseSpecText(text: string): Result<JsonObject> {

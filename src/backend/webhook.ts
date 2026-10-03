@@ -1,5 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { repoAllowed } from '../shared/git';
+import { isObject, type Json } from '../shared/refs';
 import type { GitConnection } from '../shared/types';
 import { ALL_REPOS, bumpRepoGeneration, getConnection, getWebhookSecret, isConnectionId } from './store';
 
@@ -83,9 +84,8 @@ function authentic(connection: GitConnection, request: WebTriggerRequest, secret
   }
 }
 
-type Json = Record<string, unknown>;
-const isObject = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
-const text = (v: unknown) => (typeof v === 'string' && v.length <= 300 ? v : undefined);
+// Webhook payloads are external, so only short strings are used as names.
+const shortText = (v: unknown) => (typeof v === 'string' && v.length <= 300 ? v : undefined);
 
 /** The organization from an Azure DevOps URL: dev.azure.com/{org}/... or {org}.visualstudio.com. */
 export function azureOrgFromUrl(raw: string | undefined): string | undefined {
@@ -118,10 +118,10 @@ export function azureOrgFromUrl(raw: string | undefined): string | undefined {
 export function azurePushedRepo(payload: Json): string | undefined {
   const repo = isObject(payload.resource) && isObject(payload.resource.repository) ? payload.resource.repository : undefined;
   if (!repo) return undefined;
-  const name = text(repo.name);
-  const project = isObject(repo.project) ? text(repo.project.name) : undefined;
+  const name = shortText(repo.name);
+  const project = isObject(repo.project) ? shortText(repo.project.name) : undefined;
   const account = isObject(payload.resourceContainers) && isObject(payload.resourceContainers.account) ? payload.resourceContainers.account : {};
-  const org = azureOrgFromUrl(text(repo.remoteUrl)) ?? azureOrgFromUrl(text(repo.url)) ?? azureOrgFromUrl(text(account.baseUrl));
+  const org = azureOrgFromUrl(shortText(repo.remoteUrl)) ?? azureOrgFromUrl(shortText(repo.url)) ?? azureOrgFromUrl(shortText(account.baseUrl));
   return name && project && org ? `${org}/${project}/${name}` : undefined;
 }
 
@@ -133,13 +133,13 @@ export function azurePushedRepo(payload: Json): string | undefined {
 function pushedRepo(connection: GitConnection, request: WebTriggerRequest, payload: Json): string | undefined {
   switch (connection.provider) {
     case 'github':
-      return header(request, 'x-github-event') === 'push' && isObject(payload.repository) ? (text(payload.repository.full_name) ?? ALL_REPOS) : undefined;
+      return header(request, 'x-github-event') === 'push' && isObject(payload.repository) ? (shortText(payload.repository.full_name) ?? ALL_REPOS) : undefined;
     case 'bitbucket':
-      return header(request, 'x-event-key') === 'repo:push' && isObject(payload.repository) ? (text(payload.repository.full_name) ?? ALL_REPOS) : undefined;
+      return header(request, 'x-event-key') === 'repo:push' && isObject(payload.repository) ? (shortText(payload.repository.full_name) ?? ALL_REPOS) : undefined;
     case 'gitlab': {
       const event = header(request, 'x-gitlab-event');
       if (event !== 'Push Hook' && event !== 'Tag Push Hook') return undefined;
-      return isObject(payload.project) ? (text(payload.project.path_with_namespace) ?? ALL_REPOS) : ALL_REPOS;
+      return isObject(payload.project) ? (shortText(payload.project.path_with_namespace) ?? ALL_REPOS) : ALL_REPOS;
     }
     case 'azure': {
       if (payload.eventType !== 'git.push') return undefined;

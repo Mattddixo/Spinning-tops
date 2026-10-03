@@ -6,10 +6,10 @@ import { textFile, uploadAttachment, validFilename } from '../attachments';
 import { Button, ErrorMessage, Loading } from '../components/ui';
 import { toLanguageTag } from '../format';
 import { useI18n } from '../i18n';
+import { MAX_INLINE } from './logic';
 
 const SpecEditor = lazy(() => import('../components/SpecEditor'));
 
-export const MAX_INLINE = 100_000;
 
 interface Props {
   config: MacroConfig;
