@@ -6,6 +6,8 @@ import { getCacheGeneration } from './store';
 // Cache for Git/URL specs. KVS values max out at 240 KiB so big specs get
 // chunked. Expired keys can stick around ~48h, so we also check fetchedAt.
 const CHUNK_SIZE = 200_000;
+// Bump when CachedSpec changes shape so older entries are ignored, not misread.
+const FORMAT = 'v2';
 
 export interface CachedSpec {
   specGz: string;
@@ -14,6 +16,7 @@ export interface CachedSpec {
   warnings: Notice[];
   serversResolvable: boolean;
   fetchedAt: string;
+  sourceLink?: string;
 }
 
 interface CacheHeader {
@@ -24,7 +27,7 @@ interface CacheHeader {
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 
 async function baseKey(cacheKey: string): Promise<string> {
-  return `spec-cache:${await getCacheGeneration()}:${hash(cacheKey)}`;
+  return `spec-cache:${FORMAT}:${await getCacheGeneration()}:${hash(cacheKey)}`;
 }
 
 export async function readCache(cacheKey: string, ttlMinutes: number): Promise<CachedSpec | undefined> {
@@ -37,8 +40,16 @@ export async function readCache(cacheKey: string, ttlMinutes: number): Promise<C
     if (result.failedKeys.length || result.successfulKeys.length !== header.chunks) return undefined;
     const byKey = new Map(result.successfulKeys.map((item) => [item.key, item.value]));
     const json = Array.from({ length: header.chunks }, (_, i) => byKey.get(`${key}:${i}`) ?? '').join('');
-    const cached = JSON.parse(json) as CachedSpec;
-    return cached.fetchedAt === header.fetchedAt ? cached : undefined;
+    const cached = JSON.parse(json) as Partial<CachedSpec> | null;
+    const valid =
+      cached !== null &&
+      typeof cached === 'object' &&
+      typeof cached.specGz === 'string' &&
+      typeof cached.summary === 'object' &&
+      cached.summary !== null &&
+      Array.isArray(cached.warnings) &&
+      cached.fetchedAt === header.fetchedAt;
+    return valid ? (cached as CachedSpec) : undefined;
   } catch (err) {
     console.warn(`[cache] read failed: ${err instanceof Error ? err.message : 'unknown'}`);
     return undefined;

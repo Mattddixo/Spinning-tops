@@ -1,6 +1,7 @@
 export interface SpecSource {
   label: string;
-  link?: string;
+  // read after loading; may depend on what the reads found
+  readonly link?: string;
   // undefined = don't cache
   cacheKey?: string;
   // base for resolving relative $refs

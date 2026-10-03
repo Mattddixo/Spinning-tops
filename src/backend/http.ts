@@ -48,12 +48,38 @@ export function isTextual(contentType: string | undefined): boolean {
 
 type Init = RequestInit & { timeoutMs?: number; maxBytes?: number };
 
+const MAX_REDIRECTS = 5;
+// Headers that carry a Git token. Only sent to the origin they were meant for.
+const CREDENTIAL_HEADERS = new Set(['authorization', 'private-token']);
+
+function withoutCredentials(headers: RequestInit['headers']): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries((headers ?? {}) as Record<string, string>)) if (!CREDENTIAL_HEADERS.has(k.toLowerCase())) out[k] = v;
+  return out;
+}
+
 async function send(url: string, init: Init) {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, maxBytes: _maxBytes, ...rest } = init;
   const host = new URL(url).host;
   const timeout = timeoutWithinBudget(timeoutMs);
+  const signal = AbortSignal.timeout(timeout);
   try {
-    return await fetch(url, { ...rest, redirect: rest.redirect ?? 'follow', signal: AbortSignal.timeout(timeout) });
+    if (rest.redirect === 'manual') return await fetch(url, { ...rest, signal });
+    // Follow redirects ourselves so a token never goes to another origin, and
+    // only to https.
+    const origin = new URL(url).origin;
+    let current = url;
+    let headers = rest.headers;
+    for (let hop = 0; ; hop++) {
+      const response = await fetch(current, { ...rest, headers, redirect: 'manual', signal });
+      const location = response.headers.get('location');
+      if (response.status < 300 || response.status >= 400 || response.status === 304 || !location) return response;
+      if (hop >= MAX_REDIRECTS) return fail('UPSTREAM_ERROR', 'errors.tooManyRedirects', { host });
+      const next = new URL(location, current);
+      if (next.protocol !== 'https:') return fail('UPSTREAM_ERROR', 'errors.redirectNotHttps', { host });
+      if (next.origin !== origin) headers = withoutCredentials(headers);
+      current = next.toString();
+    }
   } catch (err) {
     if (err instanceof AppFailure) throw err;
     if (looksLikeEgressDenial(err)) {

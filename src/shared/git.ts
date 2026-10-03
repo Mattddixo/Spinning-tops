@@ -168,7 +168,17 @@ export function swaggerhubDefaultVersionUrl(apiBaseUrl: string, repo: string): s
   return `${trimBase(apiBaseUrl)}/apis/${encodeSegments(repo)}/settings/default`;
 }
 
-export function webFileUrl(provider: GitProvider, webBaseUrl: string, repo: string, path: string, ref?: string): string {
+// Azure's web UI marks the ref kind with a prefix: GB branch, GT tag, GC commit.
+const AZURE_WEB_VERSION: Record<AzureVersionType, string> = { branch: 'GB', tag: 'GT', commit: 'GC' };
+
+export function webFileUrl(
+  provider: GitProvider,
+  webBaseUrl: string,
+  repo: string,
+  path: string,
+  ref?: string,
+  azureVersionType?: AzureVersionType,
+): string {
   const base = trimBase(webBaseUrl);
   const r = encodeSegments(ref || 'HEAD');
   switch (provider) {
@@ -181,7 +191,7 @@ export function webFileUrl(provider: GitProvider, webBaseUrl: string, repo: stri
     case 'azure': {
       const [org, project, name] = repo.split('/');
       const query = new URLSearchParams({ path: `/${path}` });
-      if (ref) query.set('version', `${isCommitSha(ref) ? 'GC' : 'GB'}${ref}`);
+      if (ref) query.set('version', `${AZURE_WEB_VERSION[azureVersionType ?? azureVersionTypeFor(ref)]}${ref}`);
       return `${base}/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_git/${encodeURIComponent(name)}?${query}`;
     }
     case 'swaggerhub':

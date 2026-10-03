@@ -63,7 +63,12 @@ export function requireLicense(ctx: SecureContext): void {
 }
 
 // Saved config comes from the context. Unsaved preview config (from the
-// config modal) is only accepted from licensed users.
+// config modal) is only accepted from licensed users. A licensed user could
+// put any macro settings in a preview, but nothing more than inserting their
+// own macro would give them: Git access is still limited by each connection's
+// repos and spaces, URL sources by the site setting, and Try it out by the
+// site setting plus admin-approved hosts. The macro's own Try it out switch is
+// a display choice, not a security boundary.
 export function effectiveConfig(ctx: SecureContext, preview?: MacroConfig): MacroConfig {
   if (preview && typeof preview === 'object') {
     if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'errors.previewNeedsLicense');

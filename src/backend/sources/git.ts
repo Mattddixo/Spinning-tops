@@ -171,7 +171,10 @@ export async function gitSource(
   const isSwaggerhub = connection.provider === 'swaggerhub';
   return {
     label: isSwaggerhub ? `${repo}${ref ? ` ${ref}` : ''}` : `${repo}${ref ? `@${ref}` : ''}: ${path}`,
-    link: webFileUrl(connection.provider, connection.webBaseUrl, repo, path, ref || undefined),
+    // A getter: for Azure the ref kind is only known after the first read.
+    get link() {
+      return webFileUrl(connection.provider, connection.webBaseUrl, repo, path, ref || undefined, azureVersionType);
+    },
     // The repo generation is bumped by Git webhooks, which invalidates cached copies immediately.
     cacheKey: JSON.stringify(['git', connection.id, connection.updatedAt, await getRepoGeneration(connection.id, repo), repo, ref, path]),
     baseUrl: syntheticUrl('repo', path),

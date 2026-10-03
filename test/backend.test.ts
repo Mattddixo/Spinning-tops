@@ -200,6 +200,28 @@ describe('loadSpec from Git', () => {
     expect(res.error?.message).toContain('api.github.com');
   });
 
+  it('follows redirects but only sends the token to the original host', async () => {
+    await seedGithub();
+    h.fetchMock.mockImplementation(async (url: string) => {
+      if (url.startsWith('https://api.github.com/repos/acme/payments/')) return response(301, '', { Location: 'https://api.github.com/repositories/42/contents/api/openapi.yaml' });
+      if (url.startsWith('https://api.github.com/repositories/42/')) return response(302, '', { Location: 'https://files.example.com/openapi.yaml' });
+      if (url === 'https://files.example.com/openapi.yaml') return response(200, SIMPLE_YAML);
+      return response(404, 'nope');
+    });
+    const res = await call('loadSpec', {}, { extension: { config: gitConfig } });
+    expect(res.ok).toBe(true);
+    const calls = h.fetchMock.mock.calls.map(([url, init]) => ({ url: String(url), auth: init.headers.Authorization, redirect: init.redirect }));
+    expect(calls.every((c) => c.redirect === 'manual')).toBe(true);
+    expect(calls.slice(0, 3).map((c) => c.auth)).toEqual(['Bearer ghp_secret', 'Bearer ghp_secret', undefined]);
+  });
+
+  it('refuses a redirect away from https', async () => {
+    await seedGithub();
+    h.fetchMock.mockResolvedValue(response(302, '', { Location: 'http://api.github.com/plain' }));
+    const res = await call('loadSpec', {}, { extension: { config: gitConfig } });
+    expect(res.error?.key).toBe('errors.redirectNotHttps');
+  });
+
   it('resolves Bitbucket branch names to commits', async () => {
     await h.memory.kvs.set('connections', [
       { id: 'b1', name: 'BB', provider: 'bitbucket', apiBaseUrl: 'https://api.bitbucket.org/2.0', webBaseUrl: 'https://bitbucket.org', authType: 'bearer', repos: ['ws/*'], spaceKeys: [], hasToken: true, createdAt: 'x', updatedAt: 'x' },
@@ -353,6 +375,17 @@ describe('admin', () => {
     const removed = await call('adminDeleteConnection', { id: saved.value.id });
     expect(removed.ok).toBe(true);
     expect(h.memory.secrets.size).toBe(0);
+  });
+
+  it('moves connections saved by an earlier version into one key each', async () => {
+    h.userConfluence.mockImplementation(async () => admin());
+    await seedGithub();
+    const saved = await call('adminSaveConnection', { connection: input });
+    expect(saved.ok).toBe(true);
+    expect(await h.memory.kvs.get('connections')).toBeUndefined();
+    const state = await call('adminGetState', {});
+    expect(state.value.connections.map((c: { id: string }) => c.id).sort()).toEqual([saved.value.id, 'c1'].sort());
+    expect((await call('adminDeleteConnection', { id: '../c1' })).error?.code).toBe('NOT_FOUND');
   });
 
   it('validates connection input', async () => {
@@ -542,10 +575,30 @@ describe('admin activity log', () => {
     const input = { name: 'Acme', provider: 'github', apiBaseUrl: 'https://api.github.com', webBaseUrl: 'https://github.com', authType: 'bearer', repos: ['acme/*'], spaceKeys: [], token: 'ghp_topsecret' };
     const saved = await call('adminSaveConnection', { connection: input });
     await call('adminSaveConnection', { connection: { ...input, id: saved.value.id, repos: ['acme/api'], token: 'ghp_rotated' } });
-    const log = (await h.memory.kvs.get('audit-log')) as Array<{ action: string; changes?: string[] }>;
+    const log = (await call('adminGetAudit', {})).value as Array<{ action: string; changes?: string[] }>;
     expect(log.map((e) => e.action)).toEqual(['connection.update', 'connection.create']);
     expect(log[0].changes).toEqual(['repos', 'token']);
     expect(JSON.stringify(log)).not.toContain('ghp_');
+  });
+
+  it('keeps every entry when several are written at once', async () => {
+    h.userConfluence.mockImplementation(async () => admin());
+    const hosts = ['https://a.example.com', 'https://b.example.com', 'https://c.example.com'];
+    await Promise.all(hosts.map((host) => call('adminRecordHostChange', { action: 'host.approve', host, group: 'apis' })));
+    const log = (await call('adminGetAudit', {})).value as Array<{ target: string }>;
+    expect(log.map((e) => e.target).sort()).toEqual(hosts);
+  });
+
+  it('moves a log saved by an earlier version into per-entry keys', async () => {
+    h.userConfluence.mockImplementation(async () => admin());
+    await h.memory.kvs.set('audit-log', [
+      { at: '2026-01-02T00:00:00.000Z', accountId: 'user-1', action: 'cache.clear' },
+      { at: '2026-01-01T00:00:00.000Z', accountId: 'user-1', action: 'settings.update' },
+    ]);
+    await call('adminClearCache', {});
+    const log = (await call('adminGetAudit', {})).value as Array<{ action: string }>;
+    expect(log.map((e) => e.action)).toEqual(['cache.clear', 'cache.clear', 'settings.update']);
+    expect(await h.memory.kvs.get('audit-log')).toBeUndefined();
   });
 
   it('is admin-only and rejects unknown actions', async () => {
@@ -585,7 +638,12 @@ describe('Azure DevOps connections', () => {
     expect(urls[0].pathname).toBe('/contoso/Fabrikam%20Fiber/_apis/git/repositories/payments/items');
     const [, init] = h.fetchMock.mock.calls[0];
     expect(init.headers.Authorization).toBe(`Basic ${Buffer.from(':pat-secret').toString('base64')}`);
-    expect(res.value.meta.sourceLink).toBe('https://dev.azure.com/contoso/Fabrikam%20Fiber/_git/payments?path=%2Fapi%2Fopenapi.yaml&version=GBv2.0');
+    // v2.0 turned out to be a tag, so the web link uses GT, also when served from cache.
+    const tagLink = 'https://dev.azure.com/contoso/Fabrikam%20Fiber/_git/payments?path=%2Fapi%2Fopenapi.yaml&version=GTv2.0';
+    expect(res.value.meta.sourceLink).toBe(tagLink);
+    const cached = await call('loadSpec', {}, { extension: { config } });
+    expect(cached.value.meta.fromCache).toBe(true);
+    expect(cached.value.meta.sourceLink).toBe(tagLink);
   });
 
   it('treats a full SHA as a commit', async () => {

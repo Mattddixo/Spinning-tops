@@ -153,6 +153,7 @@ export async function loadSpec(
       warnings: built.warnings,
       serversResolvable: built.serversResolvable,
       fetchedAt: built.fetchedAt,
+      ...(source.link ? { sourceLink: source.link } : {}),
     };
     if (source.cacheKey) await writeCache(source.cacheKey, settings.cacheTtlMinutes, result);
   }
@@ -167,7 +168,7 @@ export async function loadSpec(
     tryItOutAllowed: tryItOutAllowed && !isAsyncApi(result.summary.kind),
     meta: {
       sourceLabel: source.label,
-      sourceLink: source.link,
+      sourceLink: result.sourceLink ?? source.link,
       fetchedAt: result.fetchedAt,
       fromCache,
       fileCount: result.fileCount,

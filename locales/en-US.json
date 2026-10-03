@@ -29,6 +29,8 @@
     "egressNotApproved": "SpecPage isn't allowed to contact {host} yet.",
     "timeout": "{host} didn't respond within {seconds} seconds.",
     "connectFailed": "Couldn't connect to {host}.",
+    "tooManyRedirects": "{host} redirected too many times.",
+    "redirectNotHttps": "{host} redirected to an address that isn't HTTPS, so the request was stopped.",
     "responseTooLarge": "The response from {host} is too large ({size} MB).",
     "upstreamForbidden": "Access to {what} was denied (HTTP {status}).",
     "upstreamNotFound": "{what} wasn't found (HTTP 404).",

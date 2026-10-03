@@ -1,9 +1,10 @@
 import { asApp, asUser, route } from '@forge/api';
-import { kvs, WhereConditions } from '@forge/kvs';
+import { kvs } from '@forge/kvs';
 import { createHash } from 'node:crypto';
 import type { ApiEntry, ApiListItem, MacroConfig, SpecSummary } from '../shared/types';
 import { isLicensedUser, type SecureContext } from './context';
 import { fail } from './errors';
+import { listByPrefix } from './store';
 
 // A small registry of the API docs on each page, so a space can list its APIs
 // (and, later, the whole site). Each macro instance writes one entry when it
@@ -57,19 +58,6 @@ export async function recordApi(ctx: SecureContext, config: MacroConfig, summary
   }
 }
 
-async function entriesWithPrefix(prefix: string): Promise<Array<{ key: string; value: ApiEntry }>> {
-  const out: Array<{ key: string; value: ApiEntry }> = [];
-  let cursor: string | undefined;
-  do {
-    let query = kvs.query().where('key', WhereConditions.beginsWith(prefix)).limit(100);
-    if (cursor) query = query.cursor(cursor);
-    const page = await query.getMany<ApiEntry>();
-    out.push(...page.results.map((r) => ({ key: r.key, value: r.value })));
-    cursor = page.nextCursor;
-  } while (cursor && out.length < MAX_ENTRIES);
-  return out;
-}
-
 interface PageInfo {
   id: string;
   title: string;
@@ -110,7 +98,7 @@ export async function listSpaceApis(ctx: SecureContext, spaceId: string): Promis
   // Page permissions are checked as the reader, which needs a licensed user.
   if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'errors.catalogLicensedOnly');
   if (!/^\d+$/.test(spaceId)) fail('BAD_REQUEST', 'errors.generic');
-  const entries = await entriesWithPrefix(`${PREFIX}:${keyPart(spaceId)}:`);
+  const entries = await listByPrefix<ApiEntry>(`${PREFIX}:${keyPart(spaceId)}:`, MAX_ENTRIES);
   if (!entries.length) return [];
 
   const stale: string[] = [];

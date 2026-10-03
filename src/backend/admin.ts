@@ -5,7 +5,7 @@ import { loadAndBundle } from './bundle';
 import type { SecureContext } from './context';
 import { fail } from './errors';
 import { gitSource } from './sources/git';
-import { deleteToken, getConnections, getSettings, getToken, saveConnections, setToken } from './store';
+import { deleteConnectionRecord, deleteToken, getConnection, getConnections, getSettings, getToken, saveConnectionRecord, setToken } from './store';
 
 const MAX_CONNECTIONS = 20;
 const MAX_REPOS = 100;
@@ -95,7 +95,7 @@ export async function saveConnection(input: GitConnectionInput): Promise<{ conne
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
-  await saveConnections(existing ? connections.map((c) => (c.id === id ? connection : c)) : [...connections, connection]);
+  await saveConnectionRecord(connection);
 
   // What changed, for the audit log (field names only, never values).
   const changes: string[] = [];
@@ -108,12 +108,11 @@ export async function saveConnection(input: GitConnectionInput): Promise<{ conne
 }
 
 export async function deleteConnection(id: string): Promise<GitConnection> {
-  const connections = await getConnections();
-  const removed = connections.find((c) => c.id === id);
-  if (!connections.some((c) => c.id === id)) fail('NOT_FOUND', 'errors.connectionGone');
-  await saveConnections(connections.filter((c) => c.id !== id));
-  await deleteToken(id);
-  return removed as GitConnection;
+  const removed = await getConnection(String(id ?? ''));
+  if (!removed) return fail('NOT_FOUND', 'errors.connectionGone');
+  await deleteConnectionRecord(removed.id);
+  await deleteToken(removed.id);
+  return removed;
 }
 
 export async function testConnection(ctx: SecureContext, args: { id: string; repo: string; path?: string; ref?: string }) {
