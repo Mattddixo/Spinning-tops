@@ -13,7 +13,7 @@ export default defineConfig({
       exclude: ['static/app/src/harness/**', '**/*.d.ts'],
       reporter: ['text', 'text-summary', 'html'],
       // A little under the current numbers, so coverage can't quietly slide.
-      thresholds: { statements: 84, branches: 74, functions: 89, lines: 89 },
+      thresholds: { statements: 85, branches: 75, functions: 90, lines: 89.5 },
     },
   },
 });
