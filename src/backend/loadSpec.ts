@@ -3,6 +3,7 @@ import { isAsyncApi, resolveServers, summarizeSpec } from '../shared/spec';
 import { parseAsyncApi } from './asyncapi';
 import type { AppSettings, LoadSpecResponse, MacroConfig } from '../shared/types';
 import { loadAndBundle } from './bundle';
+import { requireApprovedFor } from './hosts';
 import { readCache, writeCache, type CachedSpec } from './cache';
 import { isLicensedUser, requireLicense, type SecureContext } from './context';
 import { encodeJsonText, encodeSpec } from './encoding';
@@ -60,8 +61,13 @@ export async function selectSource(
           path: config.gitPath,
         }),
       };
-    case 'url':
-      return { source: urlSource(settings, config.url) };
+    case 'url': {
+      const source = urlSource(settings, config.url);
+      // Checked here, before the cache, so a host removed from the spec list
+      // is refused straight away rather than served from cache.
+      await requireApprovedFor('specs', new URL(source.baseUrl));
+      return { source };
+    }
     case 'inline':
       return inlineSource(config.inlineSpec);
     default:

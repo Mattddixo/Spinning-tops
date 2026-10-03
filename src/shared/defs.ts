@@ -34,7 +34,7 @@ export type Defs = {
   proxyRequest: (args: { request: ProxyRequest; preview?: MacroConfig }) => Result<ProxyResponse>;
 
   /** APIs documented in a space, filtered to pages the reader can see (space page module). */
-  listSpaceApis: () => Result<{ spaceKey?: string; apis: ApiListItem[] }>;
+  listSpaceApis: () => Result<{ spaceKey?: string; apis: ApiListItem[]; truncated: boolean }>;
   /** APIs across the whole site, filtered to pages the reader can see (global page module). */
   listSiteApis: () => Result<{ apis: ApiListItem[]; truncated: boolean }>;
 

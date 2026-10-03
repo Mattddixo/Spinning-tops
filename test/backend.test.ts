@@ -898,9 +898,26 @@ describe('space API list', () => {
     const userPath = String(h.userConfluence.mock.calls[0][0]);
     expect(userPath).toBe('/wiki/api/v2/pages?id=201%2C202%2C203%2C204&limit=250&body-format=atlas_doc_format');
     // Restricted pages are never checked as the app or deleted because a reader can't see them;
-    // only an entry nobody has viewed for 180 days (204) is pruned.
+    // only an entry nobody has viewed for 90 days (204) is pruned.
     expect(h.appConfluence).not.toHaveBeenCalled();
     expect([...h.memory.values.keys()].filter((k) => k.startsWith('api:')).sort()).toEqual(['api:777:201:m-201', 'api:777:203:m-203', 'api:888:205:m-205']);
+  });
+
+  it('keeps hidden entries for 90 days, and says when the space list is cut short', async () => {
+    const entry = (contentId: string, daysAgo: number) => ({
+      spaceId: '777', contentId, contentType: 'page', localId: `m-${contentId}`, title: contentId, version: '1', kind: 'openapi-3.0',
+      operationCount: 1, sourceType: 'attachment', sourceLabel: 'x.yaml', fingerprint: 'f', updatedAt: new Date(Date.now() - daysAgo * 86_400_000).toISOString(),
+    });
+    await h.memory.kvs.set('api:777:301:m-301', entry('301', 60));
+    await h.memory.kvs.set('api:777:302:m-302', entry('302', 100));
+    h.userConfluence.mockImplementation(async () => response(200, { results: [] }));
+    const res = await call('listSpaceApis', {}, { extension: spacePage });
+    expect(res.value).toMatchObject({ apis: [], truncated: false });
+    expect(await h.memory.kvs.get('api:777:301:m-301')).toBeDefined();
+    expect(await h.memory.kvs.get('api:777:302:m-302')).toBeUndefined();
+
+    for (let i = 0; i < 1001; i++) await h.memory.kvs.set(`api:777:${4000 + i}:m`, entry(String(4000 + i), 1));
+    expect((await call('listSpaceApis', {}, { extension: spacePage })).value.truncated).toBe(true);
   });
 
   it('needs a licensed user', async () => {
@@ -1242,6 +1259,36 @@ describe('approved host lists', () => {
     );
     expect((await urlSource('https://docs.example.com/openapi.yaml')).error?.key).toBe('errors.hostNotForSpecs');
     expect(h.fetchMock.mock.calls.map(([u]) => String(u))).toEqual(['https://docs.example.com/openapi.yaml']);
+  });
+
+  it('refuses a cached URL spec once its host is removed from the spec list', async () => {
+    expect((await urlSource('https://docs.example.com/openapi.yaml')).ok).toBe(true);
+    expect((await urlSource('https://docs.example.com/openapi.yaml')).value.meta.fromCache).toBe(true);
+    await h.memory.kvs.set('approved-hosts', { git: [], specs: [], apis: ['https://api.example.com'], syncedAt: 'x' });
+    expect((await urlSource('https://docs.example.com/openapi.yaml')).error?.key).toBe('errors.hostNotForSpecs');
+  });
+
+  it('reads the approved host lists once per call, however many $refs are checked', async () => {
+    const files: Record<string, string> = {
+      'https://docs.example.com/root.yaml': `openapi: 3.0.3
+info: { title: t, version: '1' }
+paths:
+  /a: { get: { responses: { '200': { description: ok, content: { application/json: { schema: { $ref: 'https://docs.example.com/a.yaml' } } } } } } }
+  /b: { get: { responses: { '200': { description: ok, content: { application/json: { schema: { $ref: 'https://docs.example.com/b.yaml' } } } } } } }
+  /c: { get: { responses: { '200': { description: ok, content: { application/json: { schema: { $ref: 'https://docs.example.com/c.yaml' } } } } } } }
+`,
+      'https://docs.example.com/a.yaml': 'type: string',
+      'https://docs.example.com/b.yaml': 'type: integer',
+      'https://docs.example.com/c.yaml': 'type: boolean',
+    };
+    h.fetchMock.mockImplementation(async (url: string) => (files[url] ? response(200, files[url]) : response(404, 'nope')));
+    const get = vi.spyOn(h.memory.kvs, 'get');
+    const res = await urlSource('https://docs.example.com/root.yaml');
+    expect(res.ok).toBe(true);
+    expect(get.mock.calls.filter(([key]) => key === 'approved-hosts')).toHaveLength(1);
+    // A new call reads it again (nothing is shared between calls).
+    await urlSource('https://docs.example.com/root.yaml');
+    expect(get.mock.calls.filter(([key]) => key === 'approved-hosts')).toHaveLength(2);
   });
 
   it('matches wildcards the way Forge does', async () => {

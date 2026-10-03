@@ -6,10 +6,28 @@ import { fail } from './errors';
 // instead of the platform killing the function mid-way.
 export const INVOCATION_BUDGET_MS = 22_000;
 
-const storage = new AsyncLocalStorage<{ deadline: number; done: Set<string> }>();
+const storage = new AsyncLocalStorage<{ deadline: number; done: Set<string>; memo: Map<string, Promise<unknown>> }>();
 
 export function withBudget<T>(ms: number, fn: () => Promise<T>): Promise<T> {
-  return storage.run({ deadline: Date.now() + ms, done: new Set() }, fn);
+  return storage.run({ deadline: Date.now() + ms, done: new Set(), memo: new Map() }, fn);
+}
+
+/**
+ * Load a value once per invocation (for example a storage read needed by many
+ * checks in one call). Same scoping as oncePerInvocation: never shared
+ * between calls. Outside a budget it loads every time.
+ */
+export function memoPerInvocation<T>(key: string, load: () => Promise<T>): Promise<T> {
+  const store = storage.getStore();
+  if (!store) return load();
+  let value = store.memo.get(key) as Promise<T> | undefined;
+  if (!value) {
+    value = load();
+    store.memo.set(key, value);
+    // A failed load isn't kept, so a later check in the same call can retry.
+    value.catch(() => store.memo.delete(key));
+  }
+  return value;
 }
 
 /**

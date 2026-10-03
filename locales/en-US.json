@@ -412,7 +412,8 @@
       "siteIntro": "Every page on this site with an OpenAPI, Swagger or AsyncAPI macro. Pages you can't view aren't listed.",
       "siteEmpty": "No API docs yet. Add the \"OpenAPI / Swagger docs\" macro to a page and it'll appear here once the page has been viewed.",
       "colSpace": "Space",
-      "truncated": "This site has more API pages than can be checked at once, so some may be missing. Each space's API docs page lists all of its own."
+      "truncated": "This site has more API pages than can be checked at once, so some may be missing. Entries for pages you can't see (restricted, or deleted in the last 90 days) count toward that limit. Each space's API docs page checks its own pages separately.",
+      "spaceTruncated": "This space has more API pages than can be checked at once, so some may be missing. Entries for pages you can't see (restricted, or deleted in the last 90 days) count toward that limit."
     },
     "audit": {
       "settings": {

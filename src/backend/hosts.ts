@@ -1,6 +1,7 @@
 import { EgressFilteringService } from '@forge/egress';
 import { kvs } from '@forge/kvs';
 import type { ApprovedHosts, ApprovedHostGroup } from '../shared/types';
+import { memoPerInvocation } from './budget';
 import { fail } from './errors';
 
 // Forge checks every outgoing request against all approved hosts, whatever
@@ -44,9 +45,12 @@ export async function getApprovedHosts(): Promise<ApprovedHosts | undefined> {
   return (await kvs.get<ApprovedHosts>(KEY)) ?? undefined;
 }
 
+// One storage read per call, however many $refs or redirects are checked.
+const approvedHostsThisCall = () => memoPerInvocation('approved-hosts', getApprovedHosts);
+
 /** Fail unless `url` is on the approved list for `group` (as last synced from the settings page). */
 export async function requireApprovedFor(group: Exclude<ApprovedHostGroup, 'git'>, url: URL): Promise<void> {
-  const hosts = await getApprovedHosts();
+  const hosts = await approvedHostsThisCall();
   if (!hosts) {
     fail('EGRESS_NOT_APPROVED', 'errors.hostsNotSynced', undefined, { hint: 'hints.openSettingsToSync' });
   }

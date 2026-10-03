@@ -42,8 +42,8 @@ function SpaceApis() {
         const { apis, truncated } = await call(invoke('listSiteApis'));
         return { apis, truncated, site };
       }
-      const { apis } = await call(invoke('listSpaceApis'));
-      return { apis, truncated: false, site };
+      const { apis, truncated } = await call(invoke('listSpaceApis'));
+      return { apis, truncated: truncated === true, site };
     };
     load()
       .then((result) => setState({ status: 'ready', ...result }))
@@ -67,7 +67,7 @@ function SpaceApis() {
         <h1>{state.site ? t('ui.space.siteTitle') : t('ui.space.title')}</h1>
         <p className="sp-muted">{state.site ? t('ui.space.siteIntro') : t('ui.space.intro')}</p>
       </header>
-      {state.truncated ? <Message appearance="warning">{t('ui.space.truncated')}</Message> : null}
+      {state.truncated ? <Message appearance="warning">{state.site ? t('ui.space.truncated') : t('ui.space.spaceTruncated')}</Message> : null}
       {state.apis.length === 0 ? (
         <p className="sp-help">{state.site ? t('ui.space.siteEmpty') : t('ui.space.empty')}</p>
       ) : (

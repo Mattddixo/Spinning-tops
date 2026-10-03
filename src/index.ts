@@ -48,7 +48,7 @@ export const handler = makeResolver<Defs>({
       const ctx = readContext(context);
       requireLicense(ctx);
       if (!ctx.spaceId) fail('BAD_REQUEST', 'errors.catalogNeedsSpace');
-      return { spaceKey: ctx.spaceKey, apis: await listSpaceApis(ctx, ctx.spaceId as string) };
+      return { spaceKey: ctx.spaceKey, ...(await listSpaceApis(ctx, ctx.spaceId as string)) };
     }),
 
   listSiteApis: ({ context }) =>

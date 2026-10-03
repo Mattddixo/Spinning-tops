@@ -19,7 +19,9 @@ const REFRESH_MS = 12 * 60 * 60 * 1000;
 // viewed the page for this long. "Can't see" may just mean restricted (page
 // restrictions can hide pages from the app too), and every view refreshes the
 // entry, so a long silence is the only safe sign the page is gone.
-const UNSEEN_PRUNE_MS = 180 * 24 * 60 * 60 * 1000;
+// 90 days keeps hidden entries for deleted pages from crowding the scan
+// limits below for long.
+const UNSEEN_PRUNE_MS = 90 * 24 * 60 * 60 * 1000;
 const MAX_ENTRIES = 1000;
 // The site-wide list reads more entries; each 250 costs up to two page lookups.
 const MAX_SITE_ENTRIES = 2000;
@@ -140,12 +142,15 @@ async function visibleEntries(entries: Array<{ key: string; value: ApiEntry }>, 
   return items.sort((a, b) => a.title.localeCompare(b.title) || a.pageTitle.localeCompare(b.pageTitle));
 }
 
-export async function listSpaceApis(ctx: SecureContext, spaceId: string): Promise<ApiListItem[]> {
+export async function listSpaceApis(ctx: SecureContext, spaceId: string): Promise<{ apis: ApiListItem[]; truncated: boolean }> {
   // Page permissions are checked as the reader, which needs a licensed user.
   if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'errors.catalogLicensedOnly');
   if (!/^\d+$/.test(spaceId)) fail('BAD_REQUEST', 'errors.generic');
-  const entries = await listByPrefix<ApiEntry>(`${PREFIX}:${keyPart(spaceId)}:`, MAX_ENTRIES);
-  return entries.length ? visibleEntries(entries, { checkMacro: true }) : [];
+  // One more than the cap tells us whether anything was left out (hidden
+  // entries for restricted or deleted pages count toward the cap too).
+  const entries = await listByPrefix<ApiEntry>(`${PREFIX}:${keyPart(spaceId)}:`, MAX_ENTRIES + 1);
+  const truncated = entries.length > MAX_ENTRIES;
+  return { apis: entries.length ? await visibleEntries(entries.slice(0, MAX_ENTRIES), { checkMacro: true }) : [], truncated };
 }
 
 /**
