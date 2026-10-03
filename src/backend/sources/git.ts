@@ -75,7 +75,11 @@ export async function resolveGitTarget(ctx: SecureContext, target: GitTarget, op
 }
 
 async function resolveBitbucketCommit(connection: GitConnection, headers: Record<string, string>, repo: string, ref: string) {
-  if (/^[0-9a-f]{7,40}$/i.test(ref)) return ref;
+  // A full hash is a commit. A short all-hex name could also be a branch or
+  // tag (say "deadbeef"), so those are looked up first and only treated as
+  // an abbreviated commit if no branch or tag has that name.
+  if (/^[0-9a-f]{40}$/i.test(ref)) return ref;
+  const mayBeCommit = /^[0-9a-f]{7,39}$/i.test(ref);
   let name = ref;
   if (!name) {
     const res = await externalFetch(bitbucketRepoUrl(connection.apiBaseUrl, repo), { headers });
@@ -92,6 +96,7 @@ async function resolveBitbucketCommit(connection: GitConnection, headers: Record
       upstreamError(`${repo}@${name}`, res.status, res.statusText);
     }
   }
+  if (mayBeCommit) return ref;
   return fail('NOT_FOUND', 'errors.gitRefNotFound', { ref: name, repo });
 }
 

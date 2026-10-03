@@ -224,6 +224,33 @@ describe('loadSpec from Git', () => {
     expect(res.error?.key).toBe('errors.redirectNotHttps');
   });
 
+  it('checks Bitbucket hex-looking names as branches before treating them as commits', async () => {
+    await h.memory.kvs.set('connections', [
+      { id: 'b1', name: 'BB', provider: 'bitbucket', apiBaseUrl: 'https://api.bitbucket.org/2.0', webBaseUrl: 'https://bitbucket.org', authType: 'none', repos: ['ws/*'], spaceKeys: [], hasToken: false, createdAt: 'x', updatedAt: 'x' },
+    ]);
+    const simple = ROOT_YAML.replace("{ $ref: './schemas/payment.yaml' }", '{ type: string }');
+    const load = (gitRef: string) => call('loadSpec', {}, { extension: { config: { sourceType: 'git', gitConnectionId: 'b1', gitRepo: 'ws/api', gitRef, gitPath: 'openapi.yaml' } } });
+
+    // A branch called "deadbeef" resolves to its head commit.
+    h.fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith('/refs/branches/deadbeef')) return response(200, { target: { hash: 'f'.repeat(40) } });
+      if (url.endsWith(`/src/${'f'.repeat(40)}/openapi.yaml`)) return response(200, simple);
+      return response(404, 'nope');
+    });
+    expect((await load('deadbeef')).ok).toBe(true);
+
+    // No branch or tag with that name: treated as a short commit hash.
+    h.fetchMock.mockReset();
+    h.fetchMock.mockImplementation(async (url: string) => (url.endsWith('/src/abc1234/openapi.yaml') ? response(200, simple) : response(404, 'nope')));
+    expect((await load('abc1234')).ok).toBe(true);
+
+    // A full hash skips the lookups.
+    h.fetchMock.mockReset();
+    h.fetchMock.mockImplementation(async (url: string) => (url.includes('/src/') ? response(200, simple) : response(404, 'nope')));
+    expect((await load('a'.repeat(40))).ok).toBe(true);
+    expect(h.fetchMock.mock.calls.every(([url]) => String(url).includes('/src/'))).toBe(true);
+  });
+
   it('resolves Bitbucket branch names to commits', async () => {
     await h.memory.kvs.set('connections', [
       { id: 'b1', name: 'BB', provider: 'bitbucket', apiBaseUrl: 'https://api.bitbucket.org/2.0', webBaseUrl: 'https://bitbucket.org', authType: 'bearer', repos: ['ws/*'], spaceKeys: [], hasToken: true, createdAt: 'x', updatedAt: 'x' },
@@ -803,6 +830,21 @@ describe('editing attachments from the macro settings', () => {
     expect(res.value).toEqual({ text: SIMPLE_YAML, version: 4 });
     const list = await call('listAttachments', {});
     expect(list.value[0]).toMatchObject({ title: 'openapi.yaml', version: 4 });
+  });
+
+  it('lists spec attachments beyond the first page', async () => {
+    h.userConfluence.mockImplementation(async (path: string) => {
+      if (path.includes('cursor=page2')) return response(200, { results: [{ id: 'a2', title: 'zeta.yaml', version: { number: 1 } }] });
+      return response(200, {
+        results: [{ id: 'a1', title: 'alpha.json', version: { number: 2 } }, { id: 'x', title: 'photo.png' }],
+        // A hostile or odd next link only contributes its cursor; the path is rebuilt.
+        _links: { next: '/wiki/api/v2/pages/999/attachments?cursor=page2&limit=250' },
+      });
+    });
+    const list = await call('listAttachments', {});
+    expect(list.value.map((a: { title: string }) => a.title)).toEqual(['alpha.json', 'zeta.yaml']);
+    const paths = h.userConfluence.mock.calls.map(([p]) => String(p));
+    expect(paths[1]).toBe('/wiki/api/v2/pages/123/attachments?limit=250&cursor=page2');
   });
 
   it('refuses guests and files too big to edit', async () => {

@@ -6,6 +6,29 @@ import { getCacheGeneration } from './store';
 // Cache for Git/URL specs. KVS values max out at 240 KiB so big specs get
 // chunked. Expired keys can stick around ~48h, so we also check fetchedAt.
 const CHUNK_SIZE = 200_000;
+// The limit is in bytes of the stored (JSON-encoded) value, so non-ASCII text
+// and escaped quotes count extra. Leaves headroom under 240 KiB.
+const MAX_CHUNK_BYTES = 230_000;
+
+const storedBytes = (chunk: string) => Buffer.byteLength(JSON.stringify(chunk), 'utf8');
+
+/** Split text into pieces whose stored size fits a KVS value. */
+export function splitForStorage(text: string): string[] {
+  const chunks: string[] = [];
+  let start = 0;
+  while (start < text.length) {
+    let end = Math.min(start + CHUNK_SIZE, text.length);
+    for (;;) {
+      // Don't split a surrogate pair between chunks.
+      if (end < text.length && end > start + 1 && /[\uD800-\uDBFF]/.test(text[end - 1])) end--;
+      if (storedBytes(text.slice(start, end)) <= MAX_CHUNK_BYTES || end - start <= 1) break;
+      end = start + Math.max(1, Math.floor((end - start) * 0.75));
+    }
+    chunks.push(text.slice(start, end));
+    start = end;
+  }
+  return chunks;
+}
 // Bump when CachedSpec changes shape so older entries are ignored, not misread.
 const FORMAT = 'v2';
 
@@ -61,11 +84,10 @@ export async function writeCache(cacheKey: string, ttlMinutes: number, value: Ca
   try {
     const key = await baseKey(cacheKey);
     const json = JSON.stringify(value);
-    const chunks: string[] = [];
-    for (let i = 0; i < json.length; i += CHUNK_SIZE) chunks.push(json.slice(i, i + CHUNK_SIZE));
+    const chunks = splitForStorage(json);
     const ttl = { unit: 'MINUTES' as const, value: Math.max(ttlMinutes, 1) };
-    // Chunks are written before the header so a reader never sees a header without data.
-    for (let i = 0; i < chunks.length; i++) await kvs.set(`${key}:${i}`, chunks[i], { ttl });
+    // Chunks are written (side by side) before the header, so a reader never sees a header without data.
+    await Promise.all(chunks.map((chunk, i) => kvs.set(`${key}:${i}`, chunk, { ttl })));
     await kvs.set<CacheHeader>(key, { chunks: chunks.length, fetchedAt: value.fetchedAt }, { ttl });
   } catch (err) {
     console.warn(`[cache] write failed: ${err instanceof Error ? err.message : 'unknown'}`);

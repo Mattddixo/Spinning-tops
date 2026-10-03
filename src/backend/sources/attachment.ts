@@ -1,7 +1,7 @@
 import { asApp, asUser, route } from '@forge/api';
 import { isSpecFilename } from '../../shared/git';
 import type { AttachmentOption } from '../../shared/types';
-import { checkBudget } from '../budget';
+import { checkBudget, remainingMs } from '../budget';
 import type { SecureContext } from '../context';
 import { isLicensedUser } from '../context';
 import { fail } from '../errors';
@@ -28,18 +28,36 @@ function requireContent(ctx: SecureContext): string {
   return ctx.contentId as string;
 }
 
-function attachmentsRoute(ctx: SecureContext, query: { filename?: string; limit: number }) {
+function attachmentsRoute(ctx: SecureContext, query: { filename?: string; limit: number; cursor?: string }) {
   const id = requireContent(ctx);
-  const { filename, limit } = query;
+  const { filename, limit, cursor } = query;
   if (ctx.contentType === 'blogpost') {
+    if (cursor) return route`/wiki/api/v2/blogposts/${id}/attachments?limit=${limit}&cursor=${cursor}`;
     return filename
       ? route`/wiki/api/v2/blogposts/${id}/attachments?filename=${filename}&limit=${limit}`
       : route`/wiki/api/v2/blogposts/${id}/attachments?limit=${limit}`;
   }
+  if (cursor) return route`/wiki/api/v2/pages/${id}/attachments?limit=${limit}&cursor=${cursor}`;
   return filename
     ? route`/wiki/api/v2/pages/${id}/attachments?filename=${filename}&limit=${limit}`
     : route`/wiki/api/v2/pages/${id}/attachments?limit=${limit}`;
 }
+
+// The cursor from a v2 `_links.next` link. Only the cursor is reused; the
+// request itself is rebuilt with route`` like the first one.
+function nextCursor(next: string | undefined): string | undefined {
+  if (!next) return undefined;
+  try {
+    return new URL(next, 'https://confluence.invalid').searchParams.get('cursor') ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const ATTACHMENT_PAGE = 250;
+const MAX_ATTACHMENT_PAGES = 8;
+// Stop paging with this much of the time budget left, keeping what was found.
+const PAGING_RESERVE_MS = 4_000;
 
 export async function findAttachment(ctx: SecureContext, filename: string): Promise<V2Attachment> {
   checkBudget();
@@ -113,10 +131,17 @@ export async function readAttachmentForEditing(ctx: SecureContext, filename: str
 
 export async function listSpecAttachments(ctx: SecureContext): Promise<AttachmentOption[]> {
   if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'errors.editorOnly');
-  const res = await asUser().requestConfluence(attachmentsRoute(ctx, { limit: 250 }), { headers: { Accept: 'application/json' } });
-  if (!res.ok) fail('UPSTREAM_ERROR', 'errors.confluenceListFailed', { status: res.status });
-  const body = (await res.json()) as { results?: V2Attachment[] };
-  return (body.results ?? [])
+  const all: V2Attachment[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < MAX_ATTACHMENT_PAGES; page++) {
+    const res = await asUser().requestConfluence(attachmentsRoute(ctx, { limit: ATTACHMENT_PAGE, cursor }), { headers: { Accept: 'application/json' } });
+    if (!res.ok) fail('UPSTREAM_ERROR', 'errors.confluenceListFailed', { status: res.status });
+    const body = (await res.json()) as { results?: V2Attachment[]; _links?: { next?: string } };
+    all.push(...(body.results ?? []));
+    cursor = nextCursor(body._links?.next);
+    if (!cursor || remainingMs() < PAGING_RESERVE_MS) break;
+  }
+  return all
     .filter((a) => isSpecFilename(a.title))
     .map((a) => ({ title: a.title, mediaType: a.mediaType, fileSize: a.fileSize, version: a.version?.number }))
     .sort((a, b) => a.title.localeCompare(b.title));

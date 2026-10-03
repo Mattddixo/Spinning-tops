@@ -113,8 +113,11 @@ export function repoAllowed(repo: string, allowList: string[]): boolean {
   });
 }
 
+// Characters Git allows in ref names that stay unambiguous once URL-encoded
+// (every provider URL encodes the ref). `+` and `@` cover tags like
+// v1.0.0+build.5; `@{` can't occur because braces aren't allowed.
 export function isValidRef(ref: string): boolean {
-  return ref.length <= 255 && /^[A-Za-z0-9._\-/]+$/.test(ref) && !ref.includes('..') && !ref.startsWith('/');
+  return ref.length <= 255 && /^[A-Za-z0-9._\-/+@]+$/.test(ref) && !ref.includes('..') && !ref.startsWith('/');
 }
 
 const encodeSegments = (path: string) => path.split('/').map(encodeURIComponent).join('/');

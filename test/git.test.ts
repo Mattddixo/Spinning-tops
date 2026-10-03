@@ -54,6 +54,17 @@ describe('repository rules', () => {
     expect(isValidRef('release/2.1')).toBe(true);
     expect(isValidRef('a..b')).toBe(false);
     expect(isValidRef('bad ref')).toBe(false);
+    // Valid Git refs with + and @
+    expect(isValidRef('v1.0.0+build.5')).toBe(true);
+    expect(isValidRef('user@feature')).toBe(true);
+    // Still rejected
+    for (const bad of ['main@{1}', '/main', 'a\tb', 'a\nb', 'x~1', 'a:b', 'a?b', 'a*b', 'a[b', 'a\\b']) expect(isValidRef(bad)).toBe(false);
+  });
+
+  it('encodes + in refs so it reaches the provider unchanged', () => {
+    expect(githubContentsUrl('https://api.github.com', 'acme/api', 'openapi.yaml', 'v1.0.0+build.5')).toBe(
+      'https://api.github.com/repos/acme/api/contents/openapi.yaml?ref=v1.0.0%2Bbuild.5',
+    );
   });
 });
 
