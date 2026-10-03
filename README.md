@@ -75,6 +75,7 @@ Node 22 or newer.
 ```bash
 npm install          # installs static/app too
 npm run verify       # typecheck, lint, unit tests, build
+npm run coverage     # unit tests with a coverage report (fails below the thresholds in vitest.config.mts)
 npm run test:e2e     # browser tests; set PLAYWRIGHT_CHROMIUM_PATH if Playwright can't find Chromium
 ```
 

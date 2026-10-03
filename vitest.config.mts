@@ -5,5 +5,15 @@ export default defineConfig({
     include: ['test/**/*.test.ts', 'static/app/test/**/*.test.ts'],
     environment: 'node',
     restoreMocks: true,
+    coverage: {
+      provider: 'v8',
+      // Backend, shared code and the UI's plain modules. React components
+      // (.tsx) are exercised by the Playwright suite instead.
+      include: ['src/**/*.ts', 'static/app/src/**/*.ts'],
+      exclude: ['static/app/src/harness/**', '**/*.d.ts'],
+      reporter: ['text', 'text-summary', 'html'],
+      // A little under the current numbers, so coverage can't quietly slide.
+      thresholds: { statements: 84, branches: 74, functions: 89, lines: 89 },
+    },
   },
 });
