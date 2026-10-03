@@ -8,6 +8,7 @@ import { INVOCATION_BUDGET_MS, withBudget } from './backend/budget';
 import { effectiveConfig, isLicensedUser, readContext, requireLicense } from './backend/context';
 import { asResult, fail } from './backend/errors';
 import { listSpaceApis, recordApi } from './backend/catalog';
+import { compareSpec } from './backend/compare';
 import { exportMacro } from './backend/export';
 import { loadSpec } from './backend/loadSpec';
 import { proxyRequest } from './backend/proxy';
@@ -31,6 +32,13 @@ export const handler = makeResolver<Defs>({
       // Only saved macros go in the space's API list, not previews or unsaved pasted links.
       if (!payload?.preview && !result.meta.autoConverted) await recordApi(ctx, config, result.summary, result.meta.sourceLabel);
       return result;
+    }),
+
+  compareSpec: ({ payload, context }) =>
+    run('compareSpec', async () => {
+      const ctx = readContext(context);
+      // Saved settings only; there's nothing to compare in an unsaved preview.
+      return compareSpec(ctx, ctx.config, payload?.target ?? {});
     }),
 
   listSpaceApis: ({ context }) =>

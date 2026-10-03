@@ -255,3 +255,63 @@ test('the space page lists API docs and filters them', async ({ page }) => {
   expect(errors).toEqual([]);
   await page.screenshot({ path: 'test-results/space.png', fullPage: true });
 });
+
+const COMPARE = {
+  baseLabel: 'acme/payments@v1.0: openapi.yaml',
+  baseVersion: '1.0',
+  headLabel: 'acme/payments@main: openapi.yaml',
+  headVersion: '2.4.0',
+  truncated: false,
+  counts: { breaking: 2, warning: 1, info: 1 },
+  changes: [
+    { level: 'breaking', code: 'operationRemoved', operation: 'DELETE /payments/{id}' },
+    { level: 'breaking', code: 'typeChanged', operation: 'GET /payments', section: 'response', status: '200', location: '[].amount', params: { from: 'integer', to: 'string' } },
+    { level: 'warning', code: 'operationDeprecated', operation: 'GET /refunds' },
+    { level: 'info', code: 'parameterAdded', operation: 'GET /payments', location: 'cursor (query)' },
+  ],
+};
+
+test('signed-in readers can compare a Git spec with an earlier ref', async ({ page }) => {
+  const errors = await installHarness(page, { config: { sourceType: 'git', gitConnectionId: 'c1', gitRepo: 'acme/payments', gitPath: 'openapi.yaml' }, compare: COMPARE });
+  await page.goto('/macro.html');
+  await page.getByRole('button', { name: 'Changes' }).click();
+  await page.getByLabel('Branch, tag, commit or version').fill('v1.0');
+  await page.getByRole('button', { name: 'Compare', exact: true }).click();
+  await expect(page.getByText('2 breaking')).toBeVisible();
+  await expect(page.getByText('Type changed from integer to string')).toBeVisible();
+  await expect(page.getByText('response 200 · [].amount')).toBeVisible();
+  const calls = await page.evaluate(() => (window as unknown as { __SPECPAGE_CALLS__: Array<{ fn: string; payload: unknown }> }).__SPECPAGE_CALLS__);
+  expect(calls.find((c) => c.fn === 'compareSpec')?.payload).toEqual({ target: { gitRef: 'v1.0' } });
+
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download as Markdown' }).click();
+  const file = await download;
+  const text = await (await file.createReadStream()).toArray().then((chunks) => Buffer.concat(chunks).toString('utf8'));
+  expect(text).toContain('## Breaking (2)');
+  expect(text).toContain('- `DELETE /payments/{id}` Operation removed');
+  expect(await cspViolations(page)).toEqual([]);
+  expect(errors).toEqual([]);
+  await page.screenshot({ path: 'test-results/changes.png', fullPage: true });
+});
+
+test('the Changes button is hidden for anonymous readers and sources without history', async ({ page }) => {
+  await installHarness(page, { config: { sourceType: 'git', gitConnectionId: 'c1', gitRepo: 'acme/payments', gitPath: 'openapi.yaml' }, anonymous: true });
+  await page.goto('/macro.html');
+  await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Changes' })).toHaveCount(0);
+
+  await installHarness(page, { config: { sourceType: 'inline', inlineSpec: 'x' } });
+  await page.goto('/macro.html');
+  await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Changes' })).toHaveCount(0);
+});
+
+test('attachment comparisons default to the previous version', async ({ page }) => {
+  await installHarness(page, { config: { sourceType: 'attachment', attachment: 'openapi.yaml' } });
+  await page.goto('/macro.html');
+  await page.getByRole('button', { name: 'Changes' }).click();
+  await page.getByRole('button', { name: 'Compare', exact: true }).click();
+  await expect(page.getByText('No changes that affect API clients.')).toBeVisible();
+  const calls = await page.evaluate(() => (window as unknown as { __SPECPAGE_CALLS__: Array<{ fn: string; payload: unknown }> }).__SPECPAGE_CALLS__);
+  expect(calls.find((c) => c.fn === 'compareSpec')?.payload).toEqual({ target: {} });
+});

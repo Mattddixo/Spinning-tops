@@ -45,8 +45,8 @@ describe('UI text catalog', () => {
     }
     expect(used.size).toBeGreaterThan(100);
     expect([...used].filter((k) => !english.has(k))).toEqual([]);
-    // ui.audit.* and ui.provider.* are built from data (`ui.audit.${action}`).
-    const dynamic = /^ui\.(audit|provider)\./;
+    // ui.audit.*, ui.provider.* and changes.* are built from data (`ui.audit.${action}`).
+    const dynamic = /^(ui\.(audit|provider)|changes)\./;
     expect([...english.keys()].filter((k) => !used.has(k) && !dynamic.test(k))).toEqual([]);
   });
 });
@@ -69,5 +69,13 @@ describe('translate helpers', () => {
     expect(t('hello')).toBe('Hallo');
     expect(t('bye')).toBe('Bye');
     expect(t('missing.key')).toBe('missing.key');
+  });
+});
+
+describe('change list wording', () => {
+  it('has text for every kind of change', async () => {
+    const { CHANGE_CODES } = await import('../src/shared/types');
+    expect(CHANGE_CODES.filter((code) => !english.has(`changes.${code}`))).toEqual([]);
+    expect([...english.keys()].filter((k) => k.startsWith('changes.') && !(CHANGE_CODES as readonly string[]).includes(k.slice(8)))).toEqual([]);
   });
 });

@@ -65,6 +65,10 @@ export type Setup = {
   extension?: Record<string, unknown>;
   editorOptions?: Record<string, unknown>;
   attachments?: unknown[];
+  /** Result returned by compareSpec. */
+  compare?: unknown;
+  /** No accountId in the context (anonymous reader). */
+  anonymous?: boolean;
 };
 
 export async function installHarness(page: Page, setup: Setup = {}) {
@@ -97,7 +101,7 @@ export async function installHarness(page: Page, setup: Setup = {}) {
         return btoa(binary);
       };
       w.__SPECPAGE_HARNESS__ = {
-        context: { extension: { config: setup.config ?? {}, isEditing: setup.isEditing === true, content: { id: '123', type: 'page' }, ...setup.extension } },
+        context: { ...(setup.anonymous ? {} : { accountId: 'user-1' }), extension: { config: setup.config ?? {}, isEditing: setup.isEditing === true, content: { id: '123', type: 'page' }, ...setup.extension } },
         egress: [{ key: 'specpage-git-hosts', description: 'git', configured: [{ domain: 'https://api.github.com', type: ['FETCH_BACKEND_SIDE'] }] }],
         resolvers: {
           loadSpec: async () =>
@@ -123,6 +127,7 @@ export async function installHarness(page: Page, setup: Setup = {}) {
               ? // 1x1 transparent PNG
                 ok({ status: 200, statusText: 'OK', headers: { 'content-type': 'image/png' }, bodyBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', truncated: false })
               : ok({ status: 200, statusText: 'OK', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ echoed: payload.request.url, method: payload.request.method }), truncated: false }),
+          compareSpec: () => ok(setup.compare ?? { changes: [], counts: { breaking: 0, warning: 0, info: 0 }, truncated: false, baseLabel: 'old', baseVersion: '', headLabel: 'new', headVersion: '' }),
           listAttachments: () => ok(setup.attachments ?? [{ title: 'openapi.yaml', fileSize: 2048, version: 1 }]),
           getEditorOptions: () =>
             ok(

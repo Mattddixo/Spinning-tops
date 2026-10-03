@@ -3,6 +3,8 @@ import type {
   AuditEntryView,
   ApiListItem,
   AttachmentOption,
+  CompareResponse,
+  CompareTarget,
   ConnectionOption,
   GitConnection,
   GitConnectionInput,
@@ -17,6 +19,8 @@ import type {
 export type Defs = {
   // preview = unsaved settings from the config modal
   loadSpec: (args: { preview?: MacroConfig; refresh?: boolean }) => Result<LoadSpecResponse>;
+  /** Changes between the saved macro's spec and an older Git ref or attachment version. */
+  compareSpec: (args: { target: CompareTarget }) => Result<CompareResponse>;
   listAttachments: () => Result<AttachmentOption[]>;
   /** Raw attachment text for the config dialog's editor (licensed users only). */
   readAttachment: (args: { filename: string }) => Result<{ text: string; version?: number }>;

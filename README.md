@@ -19,6 +19,7 @@ If the spec is split into multiple files with relative `$ref`s, those get pulled
 ## Other stuff it does
 
 - Filter by tag or path prefix, hide deprecated endpoints
+- Compare with an earlier version: signed-in readers can pick a Git branch, tag or commit (or an older attachment version, the previous one by default) and see what changed, with breaking changes first. A removed endpoint, a new required parameter or a property dropped from a response counts as breaking; a deprecation or a new value in a response enum is flagged to check. The list downloads as Markdown for release notes.
 - "Try it out" works. Requests go through the app backend instead of the browser, so no CORS errors. File uploads (multipart and raw binary) work, and images/PDFs come back as downloads. Off unless an admin enables it.
 - Specs with relative server URLs (`/v1`) are resolved against the spec's URL when it has one. Otherwise, or if you want to point at staging, set a server URL in the macro settings.
 - OAuth in Try it out: client credentials and password flows run from Swagger UI's Authorize button (token requests go through the same proxy). Flows that need a sign-in pop-up can't open inside Confluence, so there's a box to paste an access token instead.
@@ -40,6 +41,8 @@ If the spec is split into multiple files with relative `$ref`s, those get pulled
 - Permission checks use the context Forge passes to the backend, not anything from the browser. Unsaved preview settings are only accepted from licensed users. The settings page checks the user is a Confluence admin.
 - Licensed users read attachments as themselves. Guests/anonymous users can't, so the app reads for them, but only from the page they're already looking at.
 - The Try it out proxy strips cookies and similar headers, doesn't follow redirects, and is https only. Request bodies are capped at 400 KB (350 KB for files), text responses at 4 MB and binary responses at 3 MB. Guests and anonymous users can't use it.
+- Git requests follow redirects themselves: tokens only go to the original host, and a redirect to a non-https address is refused.
+- Comparisons are for licensed users only and use the macro's saved settings, so they reach the same repos and attachments the macro already can.
 - The activity log stores field names only (for example "token" changed), never values.
 - Uploads and attachment edits go straight from the macro settings to Confluence as the editing user, so Confluence's own page permissions apply (scope `write:confluence-file`). Saving an edit adds a new attachment version, and the editor warns if someone saved a newer version in the meantime.
 - The space API list keeps one small record per macro (title, version, operation count, source label; never spec content or tokens). It's checked against the reader's permissions every time, and records for deleted pages or pages with no SpecPage macro left are removed.
@@ -100,6 +103,7 @@ All text shown to users is in `locales/en-US.json`. Backend errors are sent with
 - Pasted specs up to 100,000 characters
 - 10 approved hosts per list (Forge limit). Wildcards like `*.example.com` work.
 - Try it out: OAuth flows that need a sign-in pop-up (authorization code, implicit, OpenID Connect) can't run inside Confluence; paste a token instead. No Try it out for AsyncAPI.
+- Comparisons work for Git and attachment sources, OpenAPI and Swagger only. `oneOf`/`anyOf` edits are flagged to check by hand rather than judged. Lists stop at 500 changes.
 - Tag/path filters apply to OpenAPI and Swagger only. AsyncAPI documents are shown whole.
 - AsyncAPI message payloads in Avro, RAML or Protobuf schema formats aren't supported yet (JSON Schema and AsyncAPI schemas are).
 - Link autoconvert only knows the public hosts above, and not Azure DevOps (its file links keep the path in the query string, so a pattern would catch every repo link).

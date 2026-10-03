@@ -5,6 +5,7 @@ import { buildSearchText, filterSpec, summarizeSpec } from '../../../../src/shar
 import type { AppError, LoadSpecResponse, MacroConfig } from '../../../../src/shared/types';
 import { call, invoke, toAppError } from '../api';
 import { mount } from '../bootstrap';
+import { ChangesPanel } from '../components/ChangesPanel';
 import { SpecView } from '../components/SpecView';
 import { Button, ErrorMessage, Loading, Message } from '../components/ui';
 import { downloadJson, KIND_LABELS, relativeTime, slugify, withoutParserExtensions } from '../format';
@@ -31,6 +32,8 @@ function MacroApp() {
   const { t, locale } = useI18n();
   const [config, setConfig] = useState<MacroConfig>({});
   const [isEditing, setIsEditing] = useState(false);
+  const [signedIn, setSignedIn] = useState(false);
+  const [showChanges, setShowChanges] = useState(false);
   const [state, setState] = useState<State>({ status: 'loading' });
   const [refreshing, setRefreshing] = useState(false);
   const readySent = useRef(false);
@@ -50,6 +53,8 @@ function MacroApp() {
         // display only; the backend uses its own copy of the config
         setConfig((ctx.extension?.config as MacroConfig | undefined) ?? {});
         setIsEditing(ctx.extension?.isEditing === true);
+        // Only hides the Changes button; the backend makes the real licence check.
+        setSignedIn(Boolean(ctx.accountId));
       })
       .catch(() => undefined);
     void load();
@@ -106,6 +111,8 @@ function MacroApp() {
   const title = config.title?.trim() || data.summary.title;
   const maxHeight = Number(config.maxHeight) > 0 ? Number(config.maxHeight) : undefined;
   const when = relativeTime(t, data.meta.fetchedAt, locale);
+  const compareSource = config.sourceType === 'git' || config.sourceType === 'attachment' ? config.sourceType : undefined;
+  const canCompare = Boolean(compareSource) && signedIn && !isAsyncApi(data.summary.kind) && !data.meta.autoConverted;
   const sourceDetails = [
     data.meta.fromCache ? t('ui.macro.cached', { when }) : t('ui.macro.loaded', { when }),
     data.meta.fileCount > 1 ? t('ui.macro.files', { count: data.meta.fileCount }) : '',
@@ -124,6 +131,11 @@ function MacroApp() {
           <Button compact appearance="subtle" onClick={onRefresh} disabled={refreshing} title={t('ui.macro.refreshTitle')}>
             {refreshing ? t('ui.macro.refreshing') : t('ui.macro.refresh')}
           </Button>
+          {canCompare ? (
+            <Button compact appearance="subtle" onClick={() => setShowChanges((v) => !v)} aria-expanded={showChanges} title={t('ui.changes.buttonTitle')}>
+              {t('ui.changes.button')}
+            </Button>
+          ) : null}
           <Button
             compact
             appearance="subtle"
@@ -166,6 +178,7 @@ function MacroApp() {
           ))}
         </Message>
       ) : null}
+      {canCompare && showChanges && compareSource ? <ChangesPanel sourceType={compareSource} onClose={() => setShowChanges(false)} /> : null}
       <div className={maxHeight ? 'sp-macro-scroll' : undefined} style={maxHeight ? { maxHeight } : undefined}>
         <SpecView kind={data.summary.kind} spec={spec} config={config} tryItOutAllowed={data.tryItOutAllowed} />
       </div>

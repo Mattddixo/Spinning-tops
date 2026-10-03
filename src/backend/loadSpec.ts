@@ -124,14 +124,20 @@ export async function configFromLink(ctx: SecureContext, link: string): Promise<
   };
 }
 
+/** The macro's saved settings, or the ones a pasted link stands for. */
+export async function resolveMacroConfig(ctx: SecureContext, savedConfig: MacroConfig): Promise<{ config: MacroConfig; autoConverted: boolean }> {
+  const autoConverted = !savedConfig.sourceType && Boolean(ctx.autoConvertLink);
+  const config = autoConverted ? { ...savedConfig, ...(await configFromLink(ctx, ctx.autoConvertLink as string)) } : savedConfig;
+  return { config, autoConverted };
+}
+
 export async function loadSpec(
   ctx: SecureContext,
   savedConfig: MacroConfig,
   options: { refresh?: boolean } = {},
 ): Promise<LoadSpecResponse> {
   requireLicense(ctx);
-  const autoConverted = !savedConfig.sourceType && Boolean(ctx.autoConvertLink);
-  const config = autoConverted ? { ...savedConfig, ...(await configFromLink(ctx, ctx.autoConvertLink as string)) } : savedConfig;
+  const { config, autoConverted } = await resolveMacroConfig(ctx, savedConfig);
   const settings = await getSettings();
   const { source, rootText } = await selectSource(ctx, config, settings);
   // only licensed users can skip the cache

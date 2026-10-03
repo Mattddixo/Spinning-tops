@@ -127,6 +127,81 @@ export interface LoadSpecResponse {
   tryItOutAllowed: boolean;
 }
 
+export type ChangeLevel = 'breaking' | 'warning' | 'info';
+
+export const CHANGE_CODES = [
+  'operationRemoved',
+  'operationAdded',
+  'operationDeprecated',
+  'parameterAdded',
+  'requiredParameterAdded',
+  'parameterRemoved',
+  'parameterBecameRequired',
+  'parameterBecameOptional',
+  'requestBodyAdded',
+  'requiredRequestBodyAdded',
+  'requestBodyRemoved',
+  'requestBodyBecameRequired',
+  'requestMediaTypeAdded',
+  'requestMediaTypeRemoved',
+  'responseAdded',
+  'responseRemoved',
+  'responseMediaTypeRemoved',
+  'securityAdded',
+  'securityChanged',
+  'typeChanged',
+  'formatChanged',
+  'enumAdded',
+  'enumRemoved',
+  'enumValueAdded',
+  'enumValueRemoved',
+  'limitTightened',
+  'limitLoosened',
+  'compositionChanged',
+  'propertyAdded',
+  'requiredPropertyAdded',
+  'propertyRemoved',
+  'propertyBecameRequired',
+  'propertyBecameOptional',
+] as const;
+
+export type ChangeCode = (typeof CHANGE_CODES)[number];
+
+export interface SpecChange {
+  level: ChangeLevel;
+  code: ChangeCode;
+  /** "GET /pets/{id}" */
+  operation?: string;
+  /** Where in the operation: the request body or a response (by status). Parameters say so in `location`. */
+  section?: 'requestBody' | 'response';
+  status?: string;
+  /** Parameter label or property path, e.g. "limit (query)" or "items[].name". */
+  location?: string;
+  params?: MessageParams;
+}
+
+export interface SpecDiff {
+  changes: SpecChange[];
+  counts: Record<ChangeLevel, number>;
+  /** True when the list was cut short (very large specs). */
+  truncated: boolean;
+}
+
+/** What to compare the macro's current spec against. */
+export interface CompareTarget {
+  /** Git: another branch, tag or commit. */
+  gitRef?: string;
+  /** Attachment: an older version number. Defaults to the previous version. */
+  attachmentVersion?: number;
+}
+
+export interface CompareResponse extends SpecDiff {
+  baseLabel: string;
+  baseVersion: string;
+  headLabel: string;
+  headVersion: string;
+}
+
 /** Where a connection reads specs from. SwaggerHub isn't Git, but it fits the same connection model. */
 export type GitProvider = 'github' | 'gitlab' | 'bitbucket' | 'azure' | 'swaggerhub';
 
