@@ -1261,8 +1261,19 @@ describe('approved host lists', () => {
     expect((await call('adminSyncHosts', { hosts: { apis: ['https://x.example.com'] } })).error?.code).toBe('FORBIDDEN');
     h.userConfluence.mockImplementation(async () => admin());
     const res = await call('adminSyncHosts', {
-      hosts: { git: ['https://api.github.com'], specs: ['HTTPS://Docs.Example.com', 'http://insecure.example.com', '*', 'javascript:alert(1)'], apis: ['*.corp.example', 42] },
+      hosts: {
+        git: ['https://api.github.com'],
+        specs: ['HTTPS://Docs.Example.com', 'http://insecure.example.com', '*', 'javascript:alert(1)', 'https://*', ''],
+        // Forms Atlassian Administration accepts: bare host, trailing path, https wildcard.
+        apis: ['*.corp.example', 42, 'api.example.org', 'https://pay.example.org/v1/', 'https://*.example.net'],
+      },
     });
-    expect(res.value).toMatchObject({ git: ['https://api.github.com'], specs: ['https://docs.example.com'], apis: ['*.corp.example'] });
+    expect(res.value).toMatchObject({
+      git: ['https://api.github.com'],
+      specs: ['https://docs.example.com'],
+      apis: ['*.corp.example', 'api.example.org', 'https://pay.example.org/v1/', 'https://*.example.net'],
+    });
+    // and they match as Forge would
+    for (const url of ['https://api.example.org/x', 'https://pay.example.org/other', 'https://a.example.net/']) expect((await proxy(url)).ok).toBe(true);
   });
 });

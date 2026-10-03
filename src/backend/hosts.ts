@@ -18,8 +18,11 @@ import { fail } from './errors';
 const KEY = 'approved-hosts';
 const MAX_PER_GROUP = 10;
 const GROUPS: ApprovedHostGroup[] = ['git', 'specs', 'apis'];
-// https origins (optionally with a port) or *.domain wildcards, as the settings page stores them.
-const HOST_ENTRY = /^(https:\/\/[a-z0-9.-]+(:\d{1,5})?|\*\.[a-z0-9.-]+\.[a-z]{2,})$/;
+// Host entries in any form Atlassian Administration accepts and Forge's matcher
+// understands: optional https://, optional *. wildcard, a dotted host, optional
+// port and path. A bare "*" (allow everything) and other schemes are dropped;
+// requests are always https, so http:// entries could never match anyway.
+const HOST_ENTRY = /^(https:\/\/)?(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(:\d{1,5})?(\/\S*)?$/;
 
 function cleanGroup(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
