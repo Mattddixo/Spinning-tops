@@ -2,6 +2,7 @@ import { asUser, route } from '@forge/api';
 import { kvs } from '@forge/kvs';
 import { randomBytes } from 'node:crypto';
 import type { AuditAction, AuditEntry, AuditEntryView } from '../shared/types';
+import { oncePerInvocation } from './budget';
 import { listByPrefix } from './store';
 
 // Admin activity log: who changed settings, connections or approved hosts.
@@ -30,7 +31,7 @@ async function migrateLegacyLog(): Promise<void> {
 }
 
 async function readLog(): Promise<Array<{ key: string; value: AuditEntry }>> {
-  await migrateLegacyLog();
+  await oncePerInvocation('migrate-audit-log', migrateLegacyLog);
   const entries = await listByPrefix<AuditEntry>(PREFIX, MAX_ENTRIES + 100);
   return entries.sort((a, b) => a.key.localeCompare(b.key));
 }

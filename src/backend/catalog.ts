@@ -23,6 +23,7 @@ const UNSEEN_PRUNE_MS = 180 * 24 * 60 * 60 * 1000;
 const MAX_ENTRIES = 1000;
 // The site-wide list reads more entries; each 250 costs up to two page lookups.
 const MAX_SITE_ENTRIES = 2000;
+const SITE_RESERVE_MS = 8_000;
 const PAGE_BATCH = 250;
 
 const keyPart = (value: string) => value.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120);
@@ -155,8 +156,11 @@ export async function listSpaceApis(ctx: SecureContext, spaceId: string): Promis
  */
 export async function listSiteApis(ctx: SecureContext): Promise<{ apis: ApiListItem[]; truncated: boolean }> {
   if (!isLicensedUser(ctx)) fail('FORBIDDEN', 'errors.catalogLicensedOnly');
-  // One more than the cap tells us whether anything was left out.
-  const entries = await listByPrefix<ApiEntry>(`${PREFIX}:`, MAX_SITE_ENTRIES + 1);
-  const truncated = entries.length > MAX_SITE_ENTRIES;
+  // One more than the cap tells us whether anything was left out. If time runs
+  // short while reading, keep what was read (and say the list is partial),
+  // leaving time to check those pages against the reader's permissions.
+  let stoppedEarly = false;
+  const entries = await listByPrefix<ApiEntry>(`${PREFIX}:`, MAX_SITE_ENTRIES + 1, { reserveMs: SITE_RESERVE_MS, onStopped: () => (stoppedEarly = true) });
+  const truncated = stoppedEarly || entries.length > MAX_SITE_ENTRIES;
   return { apis: entries.length ? await visibleEntries(entries.slice(0, MAX_SITE_ENTRIES), { checkMacro: false }) : [], truncated };
 }

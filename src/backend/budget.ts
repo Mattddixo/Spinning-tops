@@ -6,10 +6,22 @@ import { fail } from './errors';
 // instead of the platform killing the function mid-way.
 export const INVOCATION_BUDGET_MS = 22_000;
 
-const storage = new AsyncLocalStorage<{ deadline: number }>();
+const storage = new AsyncLocalStorage<{ deadline: number; done: Set<string> }>();
 
 export function withBudget<T>(ms: number, fn: () => Promise<T>): Promise<T> {
-  return storage.run({ deadline: Date.now() + ms }, fn);
+  return storage.run({ deadline: Date.now() + ms, done: new Set() }, fn);
+}
+
+/**
+ * Run a check once per invocation. Deliberately not module-level state:
+ * Forge can reuse a runtime across invocations, possibly for other sites, so
+ * "already done" only holds within one call. Outside a budget it always runs.
+ */
+export async function oncePerInvocation(key: string, fn: () => Promise<void>): Promise<void> {
+  const store = storage.getStore();
+  if (store?.done.has(key)) return;
+  await fn();
+  store?.done.add(key);
 }
 
 export function remainingMs(): number {

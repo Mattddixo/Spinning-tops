@@ -125,5 +125,5 @@ All text shown to users is in `locales/en-US.json`. Backend errors are sent with
 - AsyncAPI message payloads in Avro, RAML or Protobuf schema formats aren't supported yet (JSON Schema and AsyncAPI schemas are).
 - Link autoconvert only knows the public hosts above, and not Azure DevOps (its file links keep the path in the query string, so a pattern would catch every repo link).
 - Attachments over 2 MB can't be edited in the macro settings (upload a new version instead).
-- The site-wide catalog checks up to 2,000 macros per load and says so if there are more; space pages check up to 1,000 each. Entries recorded before the catalog existed show the space key once their page is viewed again. A page whose macro was removed drops off the site catalog once its space's API docs page has been opened.
+- The site-wide catalog checks up to 2,000 macros per load and says so if there are more (or if it ran short of time and is showing a partial list); space pages check up to 1,000 each. Entries recorded before the catalog existed show the space key once their page is viewed again. A page whose macro was removed drops off the site catalog once its space's API docs page has been opened.
 - The space API list shows a page once it has been viewed after the macro was added. If a page had several SpecPage macros and one is removed, its entry stays until the last one goes.

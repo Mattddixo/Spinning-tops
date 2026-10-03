@@ -1180,3 +1180,28 @@ describe('site-wide API catalog', () => {
     expect(h.userConfluence).not.toHaveBeenCalled();
   });
 });
+
+describe('invocation-scoped work and time limits', () => {
+  it('runs a once-per-invocation check once per call, and again in the next call', async () => {
+    const { oncePerInvocation, withBudget } = await import('../src/backend/budget');
+    const fn = vi.fn(async () => undefined);
+    await withBudget(5_000, async () => {
+      await oncePerInvocation('k', fn);
+      await oncePerInvocation('k', fn);
+    });
+    await withBudget(5_000, () => oncePerInvocation('k', fn));
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops paging storage early when time runs short, keeping what it read', async () => {
+    const { listByPrefix } = await import('../src/backend/store');
+    const { withBudget } = await import('../src/backend/budget');
+    for (let i = 0; i < 250; i++) await h.memory.kvs.set(`api:1:${String(i).padStart(3, '0')}:m`, { i });
+    let stopped = false;
+    const read = await withBudget(1_000, () => listByPrefix('api:', 2001, { reserveMs: 5_000, onStopped: () => (stopped = true) }));
+    expect(stopped).toBe(true);
+    expect(read.length).toBe(100);
+    // Without a reserve it reads everything.
+    expect((await withBudget(1_000, () => listByPrefix('api:', 2001))).length).toBe(250);
+  });
+});

@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { kvs, WhereConditions } from '@forge/kvs';
 import { DEFAULT_SETTINGS, type AppSettings, type GitConnection } from '../shared/types';
+import { oncePerInvocation, remainingMs } from './budget';
 
 /**
  * Forge KVS layout (per installation):
@@ -21,10 +22,19 @@ const KEYS = {
 };
 
 /** Every value whose key starts with `prefix`, following query pages. */
-export async function listByPrefix<T>(prefix: string, max = 1000): Promise<Array<{ key: string; value: T }>> {
+export async function listByPrefix<T>(
+  prefix: string,
+  max = 1000,
+  options: { reserveMs?: number; onStopped?: () => void } = {},
+): Promise<Array<{ key: string; value: T }>> {
   const out: Array<{ key: string; value: T }> = [];
   let cursor: string | undefined;
   do {
+    // With a reserve set, stop early (keeping what's been read) rather than run out of time.
+    if (cursor && options.reserveMs !== undefined && remainingMs() < options.reserveMs) {
+      options.onStopped?.();
+      break;
+    }
     let query = kvs.query().where('key', WhereConditions.beginsWith(prefix)).limit(100);
     if (cursor) query = query.cursor(cursor);
     const page = await query.getMany<T>();
@@ -63,8 +73,10 @@ async function migrateLegacyConnections(): Promise<void> {
   await kvs.delete(KEYS.legacyConnections);
 }
 
+const migrateConnectionsOnce = () => oncePerInvocation('migrate-connections', migrateLegacyConnections);
+
 export async function getConnections(): Promise<GitConnection[]> {
-  await migrateLegacyConnections();
+  await migrateConnectionsOnce();
   const entries = await listByPrefix<GitConnection>(KEYS.connectionPrefix);
   return entries.map((e) => e.value).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.name.localeCompare(b.name));
 }
@@ -75,7 +87,7 @@ export const isConnectionId = (id: unknown): id is string => typeof id === 'stri
 
 export async function getConnection(id: string): Promise<GitConnection | undefined> {
   if (!isConnectionId(id)) return undefined;
-  await migrateLegacyConnections();
+  await migrateConnectionsOnce();
   return (await kvs.get<GitConnection>(KEYS.connection(id))) ?? undefined;
 }
 
