@@ -11,6 +11,7 @@ import { listSiteApis, listSpaceApis, recordApi } from './backend/catalog';
 import { compareSpec } from './backend/compare';
 import { exportMacro } from './backend/export';
 import { loadSpec } from './backend/loadSpec';
+import { saveApprovedHosts } from './backend/hosts';
 import { proxyRequest } from './backend/proxy';
 import { handleWebhook, type WebTriggerRequest } from './backend/webhook';
 import { listSpecAttachments, readAttachmentForEditing } from './backend/sources/attachment';
@@ -160,6 +161,12 @@ export const handler = makeResolver<Defs>({
       const connection = await getConnection(String(payload?.id ?? ''));
       if (!connection?.webhookEnabled) fail('NOT_FOUND', 'errors.connectionGone');
       return { url: await webhookUrlFor((connection as { id: string }).id) };
+    }),
+
+  adminSyncHosts: ({ payload, context }) =>
+    run('adminSyncHosts', async () => {
+      await requireAdmin(readContext(context));
+      return saveApprovedHosts(payload?.hosts);
     }),
 
   adminClearCache: ({ context }) =>

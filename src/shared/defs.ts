@@ -1,5 +1,7 @@
 import type {
   AppSettings,
+  ApprovedHostGroup,
+  ApprovedHosts,
   AuditEntryView,
   ApiListItem,
   AttachmentOption,
@@ -52,6 +54,8 @@ export type Defs = {
   adminDisableWebhook: (args: { id: string }) => Result<GitConnection>;
   /** The webhook URL for a connection, without changing its secret. */
   adminGetWebhookUrl: (args: { id: string }) => Result<{ url: string }>;
+  /** The settings page sends the approved host lists after loading them from Atlassian. */
+  adminSyncHosts: (args: { hosts: Record<ApprovedHostGroup, string[]> }) => Result<ApprovedHosts>;
   adminClearCache: () => Result<{ cleared: boolean }>;
   adminGetAudit: () => Result<AuditEntryView[]>;
   /** Host approvals happen in the browser (Atlassian's consent dialog), so the UI reports them for the log. */

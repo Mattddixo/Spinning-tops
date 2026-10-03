@@ -119,8 +119,10 @@ async function seedGithub(extra: Partial<Record<string, unknown>> = {}) {
 
 const gitConfig = { sourceType: 'git', gitConnectionId: 'c1', gitRepo: 'acme/payments', gitRef: 'main', gitPath: 'api/openapi.yaml' };
 
-beforeEach(() => {
+beforeEach(async () => {
   h.memory = createMemoryKvs();
+  // As synced from the settings page: one Try it out host, one spec host.
+  await h.memory.kvs.set('approved-hosts', { git: ['https://api.github.com'], specs: ['https://docs.example.com'], apis: ['https://api.example.com'], syncedAt: 'x' });
   h.fetchMock.mockReset();
   h.userConfluence.mockReset();
   h.appConfluence.mockReset();
@@ -1203,5 +1205,64 @@ describe('invocation-scoped work and time limits', () => {
     expect(read.length).toBe(100);
     // Without a reserve it reads everything.
     expect((await withBudget(1_000, () => listByPrefix('api:', 2001))).length).toBe(250);
+  });
+});
+
+describe('approved host lists', () => {
+  const admin = () => response(200, { operations: [{ operation: 'administer', targetType: 'application' }] });
+  const tryItOut = { sourceType: 'inline', tryItOut: true };
+  const proxy = (url: string) => call('proxyRequest', { request: { url, method: 'GET', headers: {} } }, { extension: { config: tryItOut } });
+  const urlSource = (url: string) => call('loadSpec', {}, { extension: { config: { sourceType: 'url', url } } });
+
+  beforeEach(async () => {
+    await h.memory.kvs.set('settings', { tryItOutEnabled: true, urlSourcesEnabled: true });
+    h.fetchMock.mockResolvedValue(response(200, SIMPLE_YAML, { 'Content-Type': 'application/yaml' }));
+  });
+
+  it('only lets Try it out call hosts on the Try it out list', async () => {
+    expect((await proxy('https://api.example.com/v1')).ok).toBe(true);
+    for (const url of ['https://docs.example.com/x', 'https://api.github.com/repos', 'https://api.example.com.evil.com/']) {
+      const res = await proxy(url);
+      expect(res.error).toMatchObject({ code: 'EGRESS_NOT_APPROVED', key: 'errors.hostNotForTryItOut', hintKey: 'hints.askAdminApproveTryItOutHost' });
+    }
+    expect(h.fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('only lets URL sources and $refs read hosts on the spec list', async () => {
+    expect((await urlSource('https://docs.example.com/openapi.yaml')).ok).toBe(true);
+    expect((await urlSource('https://api.example.com/openapi.yaml')).error?.key).toBe('errors.hostNotForSpecs');
+    // An absolute $ref to a Try it out host is refused too.
+    h.fetchMock.mockResolvedValue(response(200, ROOT_YAML.replace('./schemas/payment.yaml', 'https://api.example.com/x.yaml')));
+    expect((await urlSource('https://docs.example.com/root.yaml')).error?.key).toBe('errors.hostNotForSpecs');
+  });
+
+  it("doesn't follow a redirect from a spec host to a host outside the spec list", async () => {
+    h.fetchMock.mockImplementation(async (url: string) =>
+      url.startsWith('https://docs.example.com/') ? response(302, '', { Location: 'https://api.example.com/internal.yaml' }) : response(200, SIMPLE_YAML),
+    );
+    expect((await urlSource('https://docs.example.com/openapi.yaml')).error?.key).toBe('errors.hostNotForSpecs');
+    expect(h.fetchMock.mock.calls.map(([u]) => String(u))).toEqual(['https://docs.example.com/openapi.yaml']);
+  });
+
+  it('matches wildcards the way Forge does', async () => {
+    await h.memory.kvs.set('approved-hosts', { git: [], specs: [], apis: ['*.corp.example'], syncedAt: 'x' });
+    expect((await proxy('https://a.corp.example/x')).ok).toBe(true);
+    expect((await proxy('https://corp.example/x')).error?.key).toBe('errors.hostNotForTryItOut');
+  });
+
+  it('refuses until the settings page has synced the lists', async () => {
+    await h.memory.kvs.delete('approved-hosts');
+    expect((await proxy('https://api.example.com/v1')).error).toMatchObject({ key: 'errors.hostsNotSynced', hintKey: 'hints.openSettingsToSync' });
+    expect((await urlSource('https://docs.example.com/openapi.yaml')).error?.key).toBe('errors.hostsNotSynced');
+  });
+
+  it('lets only admins sync, and keeps only well-formed entries', async () => {
+    h.userConfluence.mockImplementation(async () => response(200, { operations: [] }));
+    expect((await call('adminSyncHosts', { hosts: { apis: ['https://x.example.com'] } })).error?.code).toBe('FORBIDDEN');
+    h.userConfluence.mockImplementation(async () => admin());
+    const res = await call('adminSyncHosts', {
+      hosts: { git: ['https://api.github.com'], specs: ['HTTPS://Docs.Example.com', 'http://insecure.example.com', '*', 'javascript:alert(1)'], apis: ['*.corp.example', 42] },
+    });
+    expect(res.value).toMatchObject({ git: ['https://api.github.com'], specs: ['https://docs.example.com'], apis: ['*.corp.example'] });
   });
 });

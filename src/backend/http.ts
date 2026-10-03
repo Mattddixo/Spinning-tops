@@ -46,7 +46,12 @@ export function isTextual(contentType: string | undefined): boolean {
   );
 }
 
-type Init = RequestInit & { timeoutMs?: number; maxBytes?: number };
+type Init = RequestInit & {
+  timeoutMs?: number;
+  maxBytes?: number;
+  /** Called before following a redirect; throw to stop. */
+  beforeRedirect?: (next: URL) => Promise<void>;
+};
 
 const MAX_REDIRECTS = 5;
 // Headers that carry a Git token. Only sent to the origin they were meant for.
@@ -59,7 +64,7 @@ function withoutCredentials(headers: RequestInit['headers']): Record<string, str
 }
 
 async function send(url: string, init: Init) {
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, maxBytes: _maxBytes, ...rest } = init;
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, maxBytes: _maxBytes, beforeRedirect, ...rest } = init;
   const host = new URL(url).host;
   const timeout = timeoutWithinBudget(timeoutMs);
   const signal = AbortSignal.timeout(timeout);
@@ -77,6 +82,7 @@ async function send(url: string, init: Init) {
       if (hop >= MAX_REDIRECTS) return fail('UPSTREAM_ERROR', 'errors.tooManyRedirects', { host });
       const next = new URL(location, current);
       if (next.protocol !== 'https:') return fail('UPSTREAM_ERROR', 'errors.redirectNotHttps', { host });
+      await beforeRedirect?.(next);
       if (next.origin !== origin) headers = withoutCredentials(headers);
       current = next.toString();
     }

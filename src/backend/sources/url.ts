@@ -1,5 +1,6 @@
 import type { AppSettings } from '../../shared/types';
 import { fail } from '../errors';
+import { requireApprovedFor } from '../hosts';
 import { externalFetch, upstreamError } from '../http';
 import { MAX_SOURCE_BYTES, MB } from '../limits';
 import type { SpecSource } from './types';
@@ -19,7 +20,13 @@ export function parseHttpsUrl(raw: string | undefined): URL {
 /** Read a document from a URL on an admin-approved host. */
 export async function readUrl(raw: string): Promise<string> {
   const url = parseHttpsUrl(raw);
-  const res = await externalFetch(url.toString(), { headers: { Accept: 'application/json, application/yaml, text/yaml, text/plain;q=0.9, */*;q=0.5' } });
+  // URL sources and absolute $refs: only hosts approved for specs.
+  await requireApprovedFor('specs', url);
+  const res = await externalFetch(url.toString(), {
+    headers: { Accept: 'application/json, application/yaml, text/yaml, text/plain;q=0.9, */*;q=0.5' },
+    // A spec host can't redirect the read to a host that isn't on the spec list.
+    beforeRedirect: (next) => requireApprovedFor('specs', next),
+  });
   if (res.status !== 200) upstreamError(url.host + url.pathname, res.status, res.statusText);
   if (res.truncated) fail('TOO_LARGE', 'errors.fileTooLarge', { name: url.host + url.pathname, size: MAX_SOURCE_BYTES / MB });
   return res.text;

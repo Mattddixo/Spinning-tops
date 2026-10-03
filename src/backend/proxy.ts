@@ -1,6 +1,7 @@
 import { MAX_BINARY_REQUEST_BYTES, type MacroConfig, type ProxyRequest, type ProxyResponse } from '../shared/types';
 import { isLicensedUser, requireLicense, type SecureContext } from './context';
 import { fail } from './errors';
+import { requireApprovedFor } from './hosts';
 import { externalFetchAny } from './http';
 import { parseHttpsUrl } from './sources/url';
 import { getSettings } from './store';
@@ -55,6 +56,8 @@ export async function proxyRequest(ctx: SecureContext, config: MacroConfig, requ
   const method = String(request?.method ?? '').toUpperCase();
   if (!METHODS.has(method)) fail('BAD_REQUEST', 'errors.methodUnsupported', { method: method || '(none)' });
   const url = parseHttpsUrl(request?.url);
+  // Only hosts approved for Try it out, not ones approved for Git or spec URLs.
+  await requireApprovedFor('apis', url);
 
   const headers: Record<string, string> = {};
   for (const [name, value] of Object.entries(request?.headers ?? {})) {

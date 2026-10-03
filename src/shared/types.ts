@@ -400,6 +400,13 @@ export interface AttachmentOption {
 }
 
 /** Egress group keys used with customer-managed egress. */
+export type ApprovedHostGroup = 'git' | 'specs' | 'apis';
+
+/** The settings page's copy of the approved host lists (see backend/hosts.ts). */
+export interface ApprovedHosts extends Record<ApprovedHostGroup, string[]> {
+  syncedAt: string;
+}
+
 export const EGRESS_GROUPS = {
   git: 'specpage-git-hosts',
   specs: 'specpage-spec-hosts',

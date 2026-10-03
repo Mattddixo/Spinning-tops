@@ -431,3 +431,14 @@ test("a spec's own sample doesn't shadow a generated one with the same label", a
   await samples.getByRole('tab', { name: 'Python' }).nth(0).click();
   await expect(samples.locator('code')).toHaveText('client.payments.list()');
 });
+
+test('the settings page gives the backend a copy of the approved host lists', async ({ page }) => {
+  const errors = await installHarness(page, {});
+  await page.goto('/admin.html');
+  await expect(page.getByText('Each list only works for its own purpose')).toBeVisible();
+  await expect
+    .poll(async () => (await page.evaluate(() => (window as unknown as { __SPECPAGE_CALLS__: Array<{ fn: string; payload: unknown }> }).__SPECPAGE_CALLS__)).find((c) => c.fn === 'adminSyncHosts')?.payload)
+    .toEqual({ hosts: { git: ['https://api.github.com'], specs: [], apis: [] } });
+  expect(await cspViolations(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});

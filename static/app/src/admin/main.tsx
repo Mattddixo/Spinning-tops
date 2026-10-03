@@ -598,8 +598,13 @@ function AdminApp() {
 
   const loadHosts = useCallback(async () => {
     try {
-      setHosts(await getApprovedHosts());
+      const approved = await getApprovedHosts();
+      setHosts(approved);
       setHostsError(undefined);
+      // Give the backend a copy, so each list only works for its own purpose
+      // (Try it out hosts for Try it out, spec hosts for spec URLs). Only after
+      // a successful load: a failed one must not clear the copy.
+      call(invoke('adminSyncHosts', { hosts: approved })).catch(() => setHostsError('sync-failed'));
     } catch (err) {
       setHostsError(err instanceof Error && err.message ? err.message : 'load-failed');
       setHosts({ git: [], specs: [], apis: [] });
@@ -776,8 +781,15 @@ function AdminApp() {
       <section className="sp-card sp-stack" aria-labelledby="hosts-heading">
         <h2 id="hosts-heading">{t('ui.admin.hosts')}</h2>
         <p className="sp-muted">{t('ui.admin.hostsIntro')}</p>
+        <p className="sp-muted">{t('ui.admin.hostsListsNote')}</p>
         {hostsError ? (
-          <Message appearance="warning">{hostsError === 'load-failed' ? t('ui.admin.hostsLoadFailed') : `${t('ui.admin.hostsLoadFailed')} ${hostsError}`}</Message>
+          <Message appearance="warning">
+            {hostsError === 'sync-failed'
+              ? t('ui.admin.hostsSyncFailed')
+              : hostsError === 'load-failed'
+                ? t('ui.admin.hostsLoadFailed')
+                : `${t('ui.admin.hostsLoadFailed')} ${hostsError}`}
+          </Message>
         ) : null}
         <div className="sp-host-grid">
           {(Object.keys(GROUP_INFO) as EgressGroup[]).map((g) => (

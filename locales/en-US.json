@@ -96,7 +96,10 @@
     "tokenTooLong": "The access token is too long.",
     "tokenRequired": "Enter an access token for this connection.",
     "tokenRequiredForNewHost": "The API address or provider changed, so enter the access token again. The saved token isn't sent to a new host.",
-    "webhookUnsupported": "Webhooks aren't available for SwaggerHub connections."
+    "webhookUnsupported": "Webhooks aren't available for SwaggerHub connections.",
+    "hostsNotSynced": "SpecPage doesn't have the approved host lists yet.",
+    "hostNotForTryItOut": "{host} isn't on SpecPage's list of approved Try it out hosts.",
+    "hostNotForSpecs": "{host} isn't on SpecPage's list of approved spec hosts."
   },
   "hints": {
     "askAdminApproveHost": "A Confluence admin can approve this host in SpecPage settings.",
@@ -109,7 +112,10 @@
     "restoreConnection": "Ask a Confluence admin to restore it, or edit the macro.",
     "askAdminAddRepo": "A Confluence admin can add it in SpecPage settings.",
     "askAdminAddToken": "A Confluence admin can add one in SpecPage settings.",
-    "editToConfigure": "Edit the page, select this macro and choose Edit to pick an API spec."
+    "editToConfigure": "Edit the page, select this macro and choose Edit to pick an API spec.",
+    "openSettingsToSync": "A Confluence admin can fix this by opening SpecPage settings once.",
+    "askAdminApproveTryItOutHost": "A Confluence admin can add it under 'API hosts for \"Try it out\"' in SpecPage settings.",
+    "askAdminApproveSpecHost": "A Confluence admin can add it under \"Spec hosts\" in SpecPage settings."
   },
   "warnings": {
     "mergedFiles": "Merged {count} files referenced with $ref.",
@@ -385,7 +391,9 @@
       "webhookUrl": "Webhook URL",
       "webhookSecret": "Secret",
       "webhookSecretOnce": "Copy it now; it isn't shown again. Choose New secret if you lose it.",
-      "statusWebhook": "Webhook on"
+      "statusWebhook": "Webhook on",
+      "hostsSyncFailed": "The host lists loaded, but SpecPage couldn't save its copy of them, so Try it out and URL sources may refuse newly approved hosts. Reload this page to try again.",
+      "hostsListsNote": "Each list only works for its own purpose: Try it out can only call API hosts, and URL sources and $refs can only read spec hosts. If you approve hosts in Atlassian Administration instead, open this page once afterwards so SpecPage picks them up."
     },
     "space": {
       "loading": "Loading API docs…",
@@ -431,7 +439,7 @@
       "truncated": "[Response truncated by SpecPage at 4 MB]",
       "tokenLabel": "OAuth access token (optional)",
       "tokenPlaceholder": "Paste an access token",
-      "tokenHelp": "Sign-in pop-ups (authorization code, implicit, OpenID Connect) can't open inside Confluence, so paste a token from your identity provider here instead. It's added as a Bearer header to requests that don't already have one. It stays in this page's memory only: never saved or logged, and forgotten when you leave. Like all Try it out requests, it goes through SpecPage's backend and only to hosts your admin has approved. Client credentials and password flows work from the Authorize button."
+      "tokenHelp": "Sign-in pop-ups (authorization code, implicit, OpenID Connect) can't open inside Confluence, so paste a token from your identity provider here instead. It's added as a Bearer header to requests that don't already have one. It stays in this page's memory only: never saved or logged, and forgotten when you leave. Like all Try it out requests, it goes through SpecPage's backend and only to hosts your admin has approved for Try it out. Client credentials and password flows work from the Authorize button."
     },
     "changes": {
       "button": "Changes",

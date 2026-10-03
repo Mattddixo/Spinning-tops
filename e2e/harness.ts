@@ -156,6 +156,7 @@ export async function installHarness(page: Page, setup: Setup = {}) {
           adminDisableWebhook: (payload: { id: string }) =>
             ok({ id: payload.id, name: 'Acme GitHub', provider: 'github', apiBaseUrl: 'https://api.github.com', webBaseUrl: 'https://github.com', authType: 'bearer', repos: ['acme/*'], spaceKeys: [], hasToken: true, createdAt: 'x', updatedAt: 'x' }),
           adminGetWebhookUrl: (payload: { id: string }) => ok({ url: `https://abc.hello.atlassian-dev.net/x1/hook?connection=${payload.id}` }),
+          adminSyncHosts: (payload: { hosts: Record<string, string[]> }) => ok({ ...payload.hosts, syncedAt: new Date().toISOString() }),
           adminGetAudit: () => ok(setup.audit ?? []),
           adminRecordHostChange: () => ok({ recorded: true }),
         },
