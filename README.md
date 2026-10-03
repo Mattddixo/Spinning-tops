@@ -25,6 +25,7 @@ If the spec is split into multiple files with relative `$ref`s, those get pulled
 - OAuth in Try it out: client credentials and password flows run from Swagger UI's Authorize button (token requests go through the same proxy). Flows that need a sign-in pop-up can't open inside Confluence, so there's a box to paste an access token instead.
 - AsyncAPI documents render with the AsyncAPI React component: channels, operations, messages and payload schemas.
 - Each space gets an "API docs" page listing every API documented in it, with search. Readers only see pages they have access to.
+- A Quality tab in the macro settings scores the docs out of 100 and lists what's missing: endpoint summaries, error responses, parameter descriptions, examples and so on, with the endpoints that need work. It judges what readers will see, so tag and path filters count. Runs in the browser; nothing is sent anywhere.
 - Preview while you edit the macro. You can paste a file link from any of the Git providers or SwaggerHub and it fills in the rest.
 - Several macros on one page work fine
 - Endpoints show up in Confluence search. If the spec changes after the macro was saved, editors get a note to re-save so search catches up.

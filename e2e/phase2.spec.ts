@@ -315,3 +315,24 @@ test('attachment comparisons default to the previous version', async ({ page }) 
   const calls = await page.evaluate(() => (window as unknown as { __SPECPAGE_CALLS__: Array<{ fn: string; payload: unknown }> }).__SPECPAGE_CALLS__);
   expect(calls.find((c) => c.fn === 'compareSpec')?.payload).toEqual({ target: {} });
 });
+
+test('the Quality tab scores the docs readers will see', async ({ page }) => {
+  const errors = await installHarness(page, { config: { sourceType: 'git', gitConnectionId: 'c1', gitRepo: 'acme/payments', gitPath: 'openapi.yaml' } });
+  await page.goto('/config.html');
+  await expect(page.locator('.sp-config-preview .opblock-summary-path').first()).toBeVisible();
+  await page.getByRole('tab', { name: 'Quality' }).click();
+  await expect(page.getByText(/Documentation score: \d+\/100/)).toBeVisible();
+  // The harness spec has no error responses on any of its four operations.
+  const errorsItem = page.locator('.sp-quality-item', { hasText: 'Error responses' });
+  await expect(errorsItem).toContainText('0 of 4');
+  await expect(errorsItem.getByText('GET /refunds')).toBeVisible();
+
+  // Filtering to the refunds tag leaves one operation to judge.
+  await page.getByRole('tab', { name: 'Display' }).click();
+  await page.getByRole('checkbox', { name: 'refunds' }).check();
+  await page.getByRole('tab', { name: 'Quality' }).click();
+  await expect(page.locator('.sp-quality-item', { hasText: 'Error responses' })).toContainText('0 of 1');
+  expect(await cspViolations(page)).toEqual([]);
+  expect(errors).toEqual([]);
+  await page.screenshot({ path: 'test-results/quality.png', fullPage: true });
+});

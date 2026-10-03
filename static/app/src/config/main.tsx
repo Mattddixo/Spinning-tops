@@ -1,7 +1,7 @@
 import { permissions, view } from '@forge/bridge';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isValidRef, isValidRepo, matchConnection, normaliseRepoPath, parseGitFileLink, PROVIDERS, usesFilePath } from '../../../../src/shared/git';
-import { buildSearchText, filterSpec, summarizeSpec } from '../../../../src/shared/spec';
+import { buildSearchText, filterSpec, isAsyncApi, summarizeSpec } from '../../../../src/shared/spec';
 import type { Translate } from '../../../../src/shared/i18n';
 import type {
   AppError,
@@ -15,6 +15,7 @@ import type {
 import { appError } from '../../../../src/shared/messages';
 import { call, invoke, RequestFailed, toAppError } from '../api';
 import { mount } from '../bootstrap';
+import { QualityReport } from '../components/QualityReport';
 import { SpecView } from '../components/SpecView';
 import { Button, ErrorMessage, Field, Loading, Message, splitList, Tabs, Toggle } from '../components/ui';
 import { KIND_LABELS, toLanguageTag } from '../format';
@@ -119,7 +120,7 @@ function ConfigApp() {
   const [attachments, setAttachments] = useState<AttachmentOption[] | undefined>();
   const [attachmentsError, setAttachmentsError] = useState<AppError | undefined>();
   const [approvedHosts, setApprovedHosts] = useState<string[] | undefined>();
-  const [tab, setTab] = useState<'source' | 'display'>('source');
+  const [tab, setTab] = useState<'source' | 'display' | 'quality'>('source');
   const [preview, setPreview] = useState<Preview>({ status: 'idle' });
   const [gitLink, setGitLink] = useState('');
   // Set when the macro was inserted by pasting a link (macro autoconvert).
@@ -215,6 +216,11 @@ function ConfigApp() {
   }, [currentSourceKey, sourceError, previewNonce]);
 
   const tags = preview.status === 'ready' ? preview.data.summary.tags : [];
+  // The report covers what readers will see, so tag/path filters apply.
+  const qualitySpec = useMemo(() => {
+    if (tab !== 'quality' || preview.status !== 'ready' || !config || isAsyncApi(preview.data.summary.kind)) return undefined;
+    return filterSpec(preview.spec, config);
+  }, [tab, preview, config]);
   const filteredCount = useMemo(() => {
     if (preview.status !== 'ready' || !config) return undefined;
     const filtered = filterSpec(preview.spec, config);
@@ -290,6 +296,7 @@ function ConfigApp() {
           tabs={[
             { id: 'source', label: t('ui.config.tabSource') },
             { id: 'display', label: t('ui.config.tabDisplay') },
+            { id: 'quality', label: t('ui.quality.tab') },
           ]}
         />
 
@@ -446,6 +453,14 @@ function ConfigApp() {
               />
             ) : null}
           </div>
+        ) : tab === 'quality' ? (
+          preview.status !== 'ready' ? (
+            <Message>{t('ui.quality.waiting')}</Message>
+          ) : isAsyncApi(preview.data.summary.kind) ? (
+            <Message>{t('ui.quality.notAvailable')}</Message>
+          ) : (
+            <QualityReport spec={qualitySpec ?? preview.spec} kind={preview.data.summary.kind} />
+          )
         ) : (
           <div className="sp-stack">
             <Field label={t('ui.config.title')} help={t('ui.config.titleHelp')}>

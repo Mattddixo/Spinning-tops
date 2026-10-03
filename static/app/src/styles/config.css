@@ -91,3 +91,43 @@
 textarea.sp-input.sp-input-short {
   min-height: 64px;
 }
+
+/* Quality report */
+.sp-quality-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-space-100);
+}
+
+.sp-quality-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-space-050);
+  padding: var(--sp-space-100);
+  border-left: 3px solid var(--sp-icon-success);
+  background: var(--sp-surface-sunken);
+}
+
+.sp-quality-failed {
+  border-left-color: var(--sp-icon-warning);
+}
+
+.sp-quality-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-space-050);
+  overflow-wrap: anywhere;
+}
+
+.sp-quality-examples code {
+  font-family: var(--sp-font-code);
+}
+
+.sp-quality-meter {
+  flex: 1;
+  max-width: 200px;
+  height: 8px;
+}

@@ -432,6 +432,18 @@
       "download": "Download as Markdown",
       "downloadTitle": "Save the list of changes, for example for release notes",
       "reportTitle": "API changes: {base} → {head}"
+    },
+    "quality": {
+      "tab": "Quality",
+      "intro": "How easy these docs are to use. Based on what readers will see, so filters count.",
+      "score": "Documentation score: {score}/100",
+      "passed": "{passed} of {total}",
+      "important": "Important",
+      "allGood": "Everything checked is documented.",
+      "more": "and {count} more",
+      "duplicateIds": "These operation IDs are used more than once, which breaks code generators and links: {ids}",
+      "notAvailable": "The quality report is available for OpenAPI and Swagger specs.",
+      "waiting": "Choose a source to see the report."
     }
   },
   "changes": {
@@ -468,5 +480,67 @@
     "propertyRemoved": "Property removed",
     "propertyBecameRequired": "Property is now required",
     "propertyBecameOptional": "Property is now optional"
+  },
+  "quality": {
+    "infoDescription": {
+      "title": "API description",
+      "help": "Add info.description so readers know what the API is for."
+    },
+    "contact": {
+      "title": "Contact details",
+      "help": "Add info.contact so readers know who to ask."
+    },
+    "servers": {
+      "title": "Server address",
+      "help": "List at least one server so readers (and Try it out) know where to send requests."
+    },
+    "securityDefined": {
+      "title": "Authentication",
+      "help": "Describe how to authenticate under security schemes, even if it's only an API key."
+    },
+    "operationSummary": {
+      "title": "Endpoint summaries",
+      "help": "A short summary is the label readers scan the list by."
+    },
+    "operationDescription": {
+      "title": "Endpoint descriptions",
+      "help": "Explain what each endpoint does, side effects and any limits."
+    },
+    "operationId": {
+      "title": "Operation IDs",
+      "help": "Code generators and deep links use operationId."
+    },
+    "operationTags": {
+      "title": "Tagged endpoints",
+      "help": "Tags group endpoints in the docs and let the macro filter them."
+    },
+    "tagDescriptions": {
+      "title": "Tag descriptions",
+      "help": "Describe each tag so the groups make sense on their own."
+    },
+    "successResponse": {
+      "title": "Success responses",
+      "help": "Document what a successful call returns."
+    },
+    "errorResponse": {
+      "title": "Error responses",
+      "help": "Document at least one error response (4xx, 5xx or default)."
+    },
+    "parameterDescription": {
+      "title": "Parameter descriptions",
+      "help": "Say what each parameter means and what values it takes."
+    },
+    "requestExample": {
+      "title": "Request examples",
+      "help": "Add an example request body; it fills in Try it out too."
+    },
+    "responseExample": {
+      "title": "Response examples",
+      "help": "Add an example of each success response."
+    },
+    "schemaDescription": {
+      "title": "Schema descriptions",
+      "help": "Give each shared schema a description or title."
+    }
   }
 }

@@ -202,6 +202,46 @@ export interface CompareResponse extends SpecDiff {
   headVersion: string;
 }
 
+export const QUALITY_CHECK_IDS = [
+  'infoDescription',
+  'contact',
+  'servers',
+  'securityDefined',
+  'operationSummary',
+  'operationDescription',
+  'operationId',
+  'operationTags',
+  'tagDescriptions',
+  'successResponse',
+  'errorResponse',
+  'parameterDescription',
+  'requestExample',
+  'responseExample',
+  'schemaDescription',
+] as const;
+
+export type QualityCheckId = (typeof QUALITY_CHECK_IDS)[number];
+
+export interface QualityCheck {
+  id: QualityCheckId;
+  /** Counts double in the score. */
+  important: boolean;
+  passed: number;
+  total: number;
+  failed: number;
+  /** First few things that failed, e.g. "GET /pets" or "limit (query)". */
+  examples: string[];
+  /** How many more failed beyond `examples`. */
+  more: number;
+}
+
+export interface QualityReport {
+  /** 0-100. */
+  score: number;
+  checks: QualityCheck[];
+  duplicateOperationIds: string[];
+}
+
 /** Where a connection reads specs from. SwaggerHub isn't Git, but it fits the same connection model. */
 export type GitProvider = 'github' | 'gitlab' | 'bitbucket' | 'azure' | 'swaggerhub';
 

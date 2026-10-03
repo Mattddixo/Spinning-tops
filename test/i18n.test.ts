@@ -45,8 +45,8 @@ describe('UI text catalog', () => {
     }
     expect(used.size).toBeGreaterThan(100);
     expect([...used].filter((k) => !english.has(k))).toEqual([]);
-    // ui.audit.*, ui.provider.* and changes.* are built from data (`ui.audit.${action}`).
-    const dynamic = /^(ui\.(audit|provider)|changes)\./;
+    // ui.audit.*, ui.provider.*, changes.* and quality.* are built from data (`ui.audit.${action}`).
+    const dynamic = /^(ui\.(audit|provider)|changes|quality)\./;
     expect([...english.keys()].filter((k) => !used.has(k) && !dynamic.test(k))).toEqual([]);
   });
 });
@@ -77,5 +77,13 @@ describe('change list wording', () => {
     const { CHANGE_CODES } = await import('../src/shared/types');
     expect(CHANGE_CODES.filter((code) => !english.has(`changes.${code}`))).toEqual([]);
     expect([...english.keys()].filter((k) => k.startsWith('changes.') && !(CHANGE_CODES as readonly string[]).includes(k.slice(8)))).toEqual([]);
+  });
+});
+
+describe('quality report wording', () => {
+  it('has a title and help text for every check', async () => {
+    const { QUALITY_CHECK_IDS } = await import('../src/shared/types');
+    expect(QUALITY_CHECK_IDS.filter((id) => !english.has(`quality.${id}.title`) || !english.has(`quality.${id}.help`))).toEqual([]);
+    expect([...english.keys()].filter((k) => k.startsWith('quality.') && !(QUALITY_CHECK_IDS as readonly string[]).includes(k.split('.')[1]))).toEqual([]);
   });
 });
