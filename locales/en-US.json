@@ -95,6 +95,7 @@
     "tooManyConnections": "You can have up to {max} Git connections.",
     "tokenTooLong": "The access token is too long.",
     "tokenRequired": "Enter an access token for this connection.",
+    "tokenRequiredForNewHost": "The API address or provider changed, so enter the access token again. The saved token isn't sent to a new host.",
     "webhookUnsupported": "Webhooks aren't available for SwaggerHub connections."
   },
   "hints": {

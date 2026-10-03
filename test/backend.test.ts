@@ -390,6 +390,24 @@ describe('admin', () => {
     expect((await call('adminDeleteConnection', { id: '../c1' })).error?.code).toBe('NOT_FOUND');
   });
 
+  it('asks for a new token when the API host or provider changes', async () => {
+    h.userConfluence.mockImplementation(async () => admin());
+    const saved = await call('adminSaveConnection', { connection: input });
+    const id = saved.value.id as string;
+    const moved = { ...input, id, token: undefined, apiBaseUrl: 'https://github.example.com/api/v3', webBaseUrl: 'https://github.example.com' };
+    expect((await call('adminSaveConnection', { connection: moved })).error?.key).toBe('errors.tokenRequiredForNewHost');
+    // The old token stays with the old host until a new one is given.
+    expect(h.memory.secrets.get(`connection-token:${id}`)).toBe('ghp_new');
+    expect((await call('adminSaveConnection', { connection: { ...moved, token: 'ghe_token' } })).ok).toBe(true);
+    expect(h.memory.secrets.get(`connection-token:${id}`)).toBe('ghe_token');
+    // Same host, no token: kept as before.
+    expect((await call('adminSaveConnection', { connection: { ...moved, token: undefined, name: 'Renamed' } })).value.hasToken).toBe(true);
+    // Switching to no auth on a new host drops the old token.
+    const open = { ...moved, token: undefined, authType: 'none', apiBaseUrl: 'https://api.github.com', webBaseUrl: 'https://github.com' };
+    expect((await call('adminSaveConnection', { connection: open })).value.hasToken).toBe(false);
+    expect(h.memory.secrets.has(`connection-token:${id}`)).toBe(false);
+  });
+
   it('validates connection input', async () => {
     h.userConfluence.mockImplementation(async () => admin());
     expect((await call('adminSaveConnection', { connection: { ...input, apiBaseUrl: 'http://api.github.com' } })).error?.code).toBe('BAD_REQUEST');
@@ -820,14 +838,13 @@ describe('space API list', () => {
     await h.memory.kvs.set('api:777:201:m-201', entry('201', 'Billing'));
     await h.memory.kvs.set('api:777:202:m-202', entry('202', 'Macro removed'));
     await h.memory.kvs.set('api:777:203:m-203', entry('203', 'Restricted'));
-    await h.memory.kvs.set('api:777:204:m-204', entry('204', 'Deleted'));
+    await h.memory.kvs.set('api:777:204:m-204', { ...entry('204', 'Deleted'), updatedAt: new Date(Date.now() - 200 * 86_400_000).toISOString() });
     await h.memory.kvs.set('api:888:205:m-205', entry('205', 'Other space'));
 
     const adf = (withMacro: boolean) => JSON.stringify({ type: 'doc', content: withMacro ? [{ type: 'extension', attrs: { extensionKey: 'abc/def/static/specpage-viewer', localId: 'x' } }] : [] });
     h.userConfluence.mockImplementation(async () =>
       response(200, { results: [{ id: '201', title: 'Billing page', body: { atlas_doc_format: { value: adf(true) } } }, { id: '202', title: 'Old page', body: { atlas_doc_format: { value: adf(false) } } }] }),
     );
-    h.appConfluence.mockImplementation(async () => response(200, { results: [{ id: '203', title: 'Secret' }] }));
 
     const res = await call('listSpaceApis', {}, { extension: spacePage });
     expect(res.ok).toBe(true);
@@ -836,7 +853,9 @@ describe('space API list', () => {
 
     const userPath = String(h.userConfluence.mock.calls[0][0]);
     expect(userPath).toBe('/wiki/api/v2/pages?id=201%2C202%2C203%2C204&limit=250&body-format=atlas_doc_format');
-    expect(String(h.appConfluence.mock.calls[0][0])).toBe('/wiki/api/v2/pages?id=203%2C204&limit=250');
+    // Restricted pages are never checked as the app or deleted because a reader can't see them;
+    // only an entry nobody has viewed for 180 days (204) is pruned.
+    expect(h.appConfluence).not.toHaveBeenCalled();
     expect([...h.memory.values.keys()].filter((k) => k.startsWith('api:')).sort()).toEqual(['api:777:201:m-201', 'api:777:203:m-203', 'api:888:205:m-205']);
   });
 
@@ -1099,12 +1118,11 @@ describe('site-wide API catalog', () => {
     h.userConfluence.mockImplementation(async () =>
       response(200, { results: [{ id: '301', title: 'Pay page', body: { atlas_doc_format: { value: adf } } }, { id: '302', title: 'Acct page', body: { atlas_doc_format: { value: adf } } }] }),
     );
-    h.appConfluence.mockImplementation(async () => response(200, { results: [{ id: '303', title: 'HR only' }] }));
     const res = await call('listSiteApis', {}, { extension: globalPage });
     expect(res.ok).toBe(true);
     expect(res.value.truncated).toBe(false);
     expect(res.value.apis.map((a: { title: string; spaceKey: string }) => `${a.title} (${a.spaceKey})`)).toEqual(['Accounts (OPS)', 'Payments (ENG)']);
-    // Restricted from this reader, but not deleted, so kept for others.
+    // Hidden from this reader (restricted), so kept for others.
     expect(await h.memory.kvs.get('api:999:303:m-303')).toBeDefined();
     // The site list doesn't download page bodies.
     expect(h.userConfluence.mock.calls.map(([path]) => String(path)).some((p) => p.includes('body-format'))).toBe(false);

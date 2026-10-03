@@ -1,4 +1,4 @@
-import { asApp, asUser, route } from '@forge/api';
+import { asUser, route } from '@forge/api';
 import { kvs } from '@forge/kvs';
 import { createHash } from 'node:crypto';
 import type { ApiEntry, ApiListItem, MacroConfig, SpecSummary } from '../shared/types';
@@ -15,6 +15,11 @@ import { listByPrefix } from './store';
 const PREFIX = 'api';
 // Rewrite entries at most this often when nothing changed (keeps writes down on busy pages).
 const REFRESH_MS = 12 * 60 * 60 * 1000;
+// Entries for pages the reader can't see are only removed once nobody has
+// viewed the page for this long. "Can't see" may just mean restricted (page
+// restrictions can hide pages from the app too), and every view refreshes the
+// entry, so a long silence is the only safe sign the page is gone.
+const UNSEEN_PRUNE_MS = 180 * 24 * 60 * 60 * 1000;
 const MAX_ENTRIES = 1000;
 // The site-wide list reads more entries; each 250 costs up to two page lookups.
 const MAX_SITE_ENTRIES = 2000;
@@ -67,10 +72,10 @@ interface PageInfo {
   adf?: string;
 }
 
-/** v2 bulk read: only pages the caller can see come back. */
-async function readPages(as: 'user' | 'app', type: 'page' | 'blogpost', ids: string[], withBody: boolean): Promise<Map<string, PageInfo>> {
+/** v2 bulk read as the reader: only pages they can see come back. */
+async function readPages(type: 'page' | 'blogpost', ids: string[], withBody: boolean): Promise<Map<string, PageInfo>> {
   const found = new Map<string, PageInfo>();
-  const requester = as === 'user' ? asUser() : asApp();
+  const requester = asUser();
   const batches: string[][] = [];
   for (let i = 0; i < ids.length; i += PAGE_BATCH) batches.push(ids.slice(i, i + PAGE_BATCH));
   // Batches run side by side; there are at most a handful (MAX_SITE_ENTRIES / PAGE_BATCH).
@@ -114,14 +119,13 @@ async function visibleEntries(entries: Array<{ key: string; value: ApiEntry }>, 
     if (!ofType.length) continue;
     const ids = [...new Set(ofType.map((e) => e.value.contentId))];
     // Page bodies are only fetched where we check the macro is still there.
-    const visible = await readPages('user', type, ids, options.checkMacro);
-    const hidden = ids.filter((id) => !visible.has(id));
-    // Not visible to the reader: either restricted (keep) or deleted (prune).
-    const exists = hidden.length ? await readPages('app', type, hidden, false) : new Map<string, PageInfo>();
+    const visible = await readPages(type, ids, options.checkMacro);
     for (const { key, value } of ofType) {
       const page = visible.get(value.contentId);
       if (!page) {
-        if (!exists.has(value.contentId)) stale.push(key);
+        // Hidden from this reader: keep it for readers who can see it, unless
+        // it hasn't been viewed by anyone for a long time.
+        if (Date.now() - Date.parse(value.updatedAt) > UNSEEN_PRUNE_MS) stale.push(key);
         continue;
       }
       if (options.checkMacro && !pageHasMacro(page.adf)) {

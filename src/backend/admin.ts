@@ -80,6 +80,13 @@ export async function saveConnection(input: GitConnectionInput): Promise<{ conne
   if (!existing && connections.length >= MAX_CONNECTIONS) fail('BAD_REQUEST', 'errors.tooManyConnections', { max: MAX_CONNECTIONS });
 
   const id = existing?.id ?? randomUUID();
+  // A stored token belongs to the host it was entered for. If the API host or
+  // provider changes, ask for a new one rather than sending the old token to
+  // the new host; with no auth, drop it.
+  const hostChanged = Boolean(existing) && (originOf(existing?.apiBaseUrl ?? '') !== apiOrigin || existing?.provider !== provider);
+  const newToken = typeof input.token === 'string' && input.token.trim() !== '';
+  if (hostChanged && input.authType !== 'none' && !newToken) fail('BAD_REQUEST', 'errors.tokenRequiredForNewHost');
+  if (hostChanged && !newToken) await deleteToken(id);
   if (typeof input.token === 'string') {
     const token = input.token.trim();
     if (token) {
