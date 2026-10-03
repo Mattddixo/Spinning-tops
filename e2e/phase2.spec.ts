@@ -76,6 +76,22 @@ test('the spec editor highlights problems inline and saves pasted specs', async 
   expect(errors).toEqual([]);
 });
 
+test('a new macro offers a sample API that needs no setup', async ({ page }) => {
+  const errors = await installHarness(page, {});
+  await page.goto('/config.html');
+  await page.getByRole('button', { name: 'Try a sample API' }).click();
+  await expect(page.getByRole('radio', { name: /Paste/ })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('button', { name: 'Try a sample API' })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'OpenAPI or Swagger document (YAML or JSON)' })).toContainText('title: Pet Store (sample)');
+  await expect(page.locator('.sp-config-preview .swagger-ui')).toBeVisible();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const config = (await submitted(page))?.config;
+  expect(config?.sourceType).toBe('inline');
+  expect(String(config?.inlineSpec)).toMatch(/^openapi: 3\.0\.3\ninfo:\n {2}title: Pet Store \(sample\)/);
+  expect(await cspViolations(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
 test('a pasted spec can be saved as a page attachment', async ({ page }) => {
   await installHarness(page, { config: { sourceType: 'inline', inlineSpec: '{"openapi":"3.0.3","info":{"title":"x","version":"1"},"paths":{}}' } });
   await page.addInitScript(() => {

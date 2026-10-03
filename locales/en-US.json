@@ -179,6 +179,8 @@
       "sourceUrlDesc": "A public or approved https:// address",
       "sourceInline": "Paste",
       "sourceInlineDesc": "Paste the spec directly",
+      "sampleIntro": "New to SpecPage? Load a sample API to see what readers get, then swap in your own spec.",
+      "sampleButton": "Try a sample API",
       "turnedOffByAdmin": "Turned off by your admin",
       "urlsOffTitle": "A Confluence admin can turn on URL sources in SpecPage settings.",
       "noAttachmentsTitle": "No spec files are attached to this page yet.",

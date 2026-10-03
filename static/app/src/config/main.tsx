@@ -16,6 +16,7 @@ import { InlineSource } from './InlineSource';
 import { UrlSource } from './UrlSource';
 import { usePreview } from './usePreview';
 import { cleanConfig, isHttpsUrl, validateSource } from './logic';
+import { SAMPLE_SPEC } from './sample';
 import { useI18n } from '../i18n';
 import '../styles/config.css';
 
@@ -187,6 +188,18 @@ function ConfigApp() {
                 );
               })}
             </div>
+
+            {!config.sourceType ? (
+              <Message
+                actions={
+                  <Button compact onClick={() => update({ sourceType: 'inline', inlineSpec: SAMPLE_SPEC })}>
+                    {t('ui.config.sampleButton')}
+                  </Button>
+                }
+              >
+                {t('ui.config.sampleIntro')}
+              </Message>
+            ) : null}
 
             {config.sourceType === 'attachment' ? (
               <AttachmentSource
